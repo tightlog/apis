@@ -122,7 +122,6 @@ export interface ModeratableFields {
   species: string;
   method: string;
   bait: string;
-  peg: string;
 }
 
 export function moderatableText(fields: ModeratableFields): string {
@@ -133,7 +132,6 @@ export function moderatableText(fields: ModeratableFields): string {
     fields.spotName,
     fields.method,
     fields.bait,
-    fields.peg,
     fields.notes,
   ]
     .map(part => part.trim())

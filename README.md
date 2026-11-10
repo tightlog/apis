@@ -6,9 +6,9 @@ Each directory is a self-contained Worker with its own `package.json`,
 `wrangler.jsonc` and tests. They are published snapshots of a private
 monorepo, so the git history is squashed on each sync.
 
-| Directory              | Worker                                                           |
-| ---------------------- | --------------------------------------------------------------- |
-| [`sync-api`](sync-api) | Syncs the private, end-to-end encrypted logbook to Turso.       |
+| Directory              | Worker                                                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [`sync-api`](sync-api) | Syncs the private, end-to-end encrypted logbook to Turso.                                                              |
 | [`mcp-api`](mcp-api)   | Serves the coach's conditions tools (solunar, weather, tides, sea state, river level) over the Model Context Protocol. |
 
 ## What is not here

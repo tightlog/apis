@@ -1,0 +1,37 @@
+{
+  "name": "@tightlog/mcp-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker serving the coach's conditions tools over MCP. The AI Worker reaches it through a service binding.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env staging",
+    "types": "wrangler types --env production --include-runtime=false",
+    "ts:check": "bun run types && tsc --noEmit",
+    "format:fix": "oxfmt",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "test": "TZ=UTC vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@sentry/cloudflare": "10.67.0",
+    "@tightlog/protocol": "file:./vendor/protocol",
+    "@tightlog/solunar": "file:./vendor/solunar",
+    "@tightlog/worker-utils": "file:./vendor/worker-utils",
+    "zod": "4.6.1",
+    "@tightlog/app-attest": "file:./vendor/app-attest"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260801.1",
+    "@types/node": "25.9.2",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10",
+    "wrangler": "4.152.0",
+    "@nkzw/oxlint-config": "2.0.1",
+    "@oxlint/plugins": "1.86.0",
+    "oxfmt": "0.71.0",
+    "oxlint": "1.86.0",
+    "oxlint-tsgolint": "7.0.2003"
+  }
+}

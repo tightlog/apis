@@ -1,0 +1,28 @@
+# Turso (libsql) connection for the sync store.
+TURSO_DATABASE_URL=libsql://<your-staging-db>.turso.io
+TURSO_AUTH_TOKEN=
+
+# Clerk. Optional locally: without these, account link + lost-phone adopt
+# return 501 and anonymous key-based sync still works.
+CLERK_SECRET_KEY=
+CLERK_JWT_KEY=
+
+# RevenueCat secret key. Optional: without it, purchase-based restore returns 501.
+REVENUECAT_SECRET_KEY=
+
+# Encrypts recovery-key escrow blobs at rest. Required for escrow routes.
+KEY_ESCROW_SECRET=
+
+# Apple App Attest. Required when APP_ATTEST_ENV=production.
+APPLE_TEAM_ID=
+# Google Play Integrity. Deploy uploads these as Worker secrets, not wrangler vars.
+PLAY_INTEGRITY_SERVICE_ACCOUNT=
+PLAY_CERT_SHA256=
+# Comma-separated iOS bundle ids allowed to attest.
+APP_ATTEST_BUNDLE_IDS=
+# development = attest optional when the client sends no headers.
+# production = attest required on the gated adopt routes.
+APP_ATTEST_ENV=development
+
+# Optional. Error reporting.
+SENTRY_DSN=

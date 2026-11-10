@@ -117,6 +117,8 @@ const TABLE_FIELDS = {
     pinned: bool('pinned'),
     bait: text('bait'),
     hookBait: text('hook_bait'),
+    peg: text('peg'),
+    swim: text('swim'),
     rigId: textOrNull('rig_uuid'),
     notes: text('notes'),
     createdAt: text('created_at'),

@@ -3,6 +3,8 @@ import type { JsonValue } from './json';
 
 export const MCP_PATH = '/mcp';
 
+export const COACH_SYSTEM_MAX_CHARS = 4000;
+
 export const coachContextInput = {
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),

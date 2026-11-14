@@ -19,7 +19,6 @@ const SEARCH_KM = 12;
 const READING_COUNT = 12;
 const STEADY_M = 0.01;
 
-// https://environment.data.gov.uk/flood-monitoring/doc/reference
 async function getEa<T>(url: string): Promise<T[]> {
   const body = await getJson<{ items?: T[] }>(url);
   return body?.items ?? [];

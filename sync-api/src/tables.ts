@@ -96,58 +96,57 @@ function oneOf(
   };
 }
 
-// Key order is the bind and SELECT column order.
 const TABLE_FIELDS = {
-  catches: {
-    species: text('species'),
-    weightKg: real('weight_kg'),
-    lengthCm: real('length_cm'),
-    caughtAt: text('caught_at'),
-    spotId: textOrNull('spot_id'),
-    sessionId: textOrNull('session_id'),
-    method: text('method'),
-    weather: text('weather'),
-    airTempC: real('air_temp_c'),
-    windKph: real('wind_kph'),
-    pressureHpa: real('pressure_hpa'),
-    latitude: real('latitude'),
-    longitude: real('longitude'),
-    released: bool('released'),
-    landed: bool('landed', 1),
-    pinned: bool('pinned'),
-    bait: text('bait'),
-    hookBait: text('hook_bait'),
-    peg: text('peg'),
-    swim: text('swim'),
-    rigId: textOrNull('rig_uuid'),
-    notes: text('notes'),
-    createdAt: text('created_at'),
-  },
-  spots: {
-    name: text('name'),
-    waterType: text('water_type'),
-    latitude: real('latitude'),
-    longitude: real('longitude'),
-    notes: text('notes'),
-    createdAt: text('created_at'),
-  },
-  sessions: {
-    name: textOrNull('name'),
-    startedAt: text('started_at'),
-    endedAt: textOrNull('ended_at'),
-    notes: text('notes'),
-    rodCount: real('rod_count'),
-    setup: text('setup'),
-    createdAt: text('created_at'),
-  },
-  catch_media: {
-    catchId: text('catch_id'),
-    basename: text('basename'),
-    kind: oneOf('kind', ['photo', 'video'], 'photo'),
-    position: boundedInt('position', MAX_MEDIA_POSITION),
-    createdAt: text('created_at'),
-  },
-};
+  catches: [
+    ['species', text('species')],
+    ['weightKg', real('weight_kg')],
+    ['lengthCm', real('length_cm')],
+    ['caughtAt', text('caught_at')],
+    ['spotId', textOrNull('spot_id')],
+    ['sessionId', textOrNull('session_id')],
+    ['method', text('method')],
+    ['weather', text('weather')],
+    ['airTempC', real('air_temp_c')],
+    ['windKph', real('wind_kph')],
+    ['pressureHpa', real('pressure_hpa')],
+    ['latitude', real('latitude')],
+    ['longitude', real('longitude')],
+    ['released', bool('released')],
+    ['landed', bool('landed', 1)],
+    ['pinned', bool('pinned')],
+    ['bait', text('bait')],
+    ['hookBait', text('hook_bait')],
+    ['peg', text('peg')],
+    ['swim', text('swim')],
+    ['rigId', textOrNull('rig_uuid')],
+    ['notes', text('notes')],
+    ['createdAt', text('created_at')],
+  ],
+  spots: [
+    ['name', text('name')],
+    ['waterType', text('water_type')],
+    ['latitude', real('latitude')],
+    ['longitude', real('longitude')],
+    ['notes', text('notes')],
+    ['createdAt', text('created_at')],
+  ],
+  sessions: [
+    ['name', textOrNull('name')],
+    ['startedAt', text('started_at')],
+    ['endedAt', textOrNull('ended_at')],
+    ['notes', text('notes')],
+    ['rodCount', real('rod_count')],
+    ['setup', text('setup')],
+    ['createdAt', text('created_at')],
+  ],
+  catch_media: [
+    ['catchId', text('catch_id')],
+    ['basename', text('basename')],
+    ['kind', oneOf('kind', ['photo', 'video'], 'photo')],
+    ['position', boundedInt('position', MAX_MEDIA_POSITION)],
+    ['createdAt', text('created_at')],
+  ],
+} satisfies Record<string, readonly (readonly [string, Field])[]>;
 
 export type SyncTable = keyof typeof TABLE_FIELDS;
 
@@ -155,8 +154,8 @@ export function isSyncTable(value: string): value is SyncTable {
   return Object.hasOwn(TABLE_FIELDS, value);
 }
 
-function fields(table: SyncTable): [string, Field][] {
-  return Object.entries(TABLE_FIELDS[table]);
+function fields(table: SyncTable): readonly (readonly [string, Field])[] {
+  return TABLE_FIELDS[table];
 }
 
 export function dataColumns(table: SyncTable): string[] {

@@ -41,20 +41,12 @@ const USER_ID_BY_KEY_HASH = '(SELECT id FROM users WHERE key_hash = ?)';
 
 const MAX_ACK_IDS = 200;
 
-/**
- * Keeps each readback at 100 bound parameters: 99 ids plus the user id.
- */
 const READBACK_CHUNK = 99;
 
 const UPSERT_CHUNK = 50;
 
 export const PULL_PAGE_SIZE = 200;
 
-/**
- * Cap for the same-timestamp boundary expansion. A page ends on a timestamp.
- * Every row at that ms must be in the same page, or the cursor skips rows.
- * Without a limit, a bulk stamp at one ms can use too much memory.
- */
 const MAX_BOUNDARY_COHORT = 2_000;
 
 export type IdentitySummary = {

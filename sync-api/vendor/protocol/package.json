@@ -12,7 +12,8 @@
     "./path": "./src/path.ts",
     "./push": "./src/push.ts",
     "./social": "./src/social.ts",
-    "./sync": "./src/sync.ts"
+    "./sync": "./src/sync.ts",
+    "./weather": "./src/weather.ts"
   },
   "dependencies": {
     "zod": "4.6.1"

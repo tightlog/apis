@@ -220,7 +220,7 @@ export function normaliseCommentBody(text: string): string | null {
 }
 
 export function authorNameSql(profileAlias: string, fallback = ''): string {
-  return `COALESCE(NULLIF(${profileAlias}.name, ''), ${profileAlias}.handle, '${fallback}')`;
+  return `COALESCE(NULLIF(${profileAlias}.name, ''), NULLIF(${profileAlias}.handle, ${profileAlias}.user_id), '${fallback}')`;
 }
 
 export type ModerationSubjectType = 'catch' | 'comment';

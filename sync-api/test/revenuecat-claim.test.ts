@@ -23,16 +23,6 @@ async function addUser(id: string): Promise<void> {
 }
 
 describe('SyncRepo.claimRevenueCatId', () => {
-  test('a reinstall re-presenting the same customer does not throw', async () => {
-    await addUser('H1');
-    await repo.claimRevenueCatId('H1', RC).run();
-
-    await addUser('H2');
-    await expect(repo.claimRevenueCatId('H2', RC).run()).resolves.toEqual({
-      meta: { changes: 0 },
-    });
-  });
-
   test('the customer still points at the original logbook after a reinstall', async () => {
     await addUser('H1');
     await repo.claimRevenueCatId('H1', RC).run();

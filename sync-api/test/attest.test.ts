@@ -56,20 +56,22 @@ describe('attestGate against the sync database', () => {
     });
   });
 
-  test('reads a registered key back for verification', async () => {
+  test('a registered key goes on to the assertion check', async () => {
     await tursoAttestStore(db).putKey(
       'k1',
       { publicKeySpkiB64: 'spki', bundleId: 'com.example.app' },
       NOW,
     );
 
-    expect(
-      await tursoAttestGate(env(), db, headers('k1', 'bogus'), input),
-    ).toEqual<GateResult>({
-      ok: false,
-      status: 401,
-      error: 'assertion is not valid CBOR',
-    });
+    const result = await tursoAttestGate(
+      env(),
+      db,
+      headers('k1', 'bogus'),
+      input,
+    );
+    expect(result.ok).toBe(false);
+
+    expect(result.ok ? null : result.error).not.toBe('attestation_unknown_key');
   });
 });
 

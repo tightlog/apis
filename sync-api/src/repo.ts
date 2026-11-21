@@ -1,11 +1,17 @@
-import type { SqlRow, SyncDb, SyncStatement } from './db';
-import type { SanitizedRow, SyncTable } from './tables';
+import type { SyncErrorCode, SyncTableName } from './http';
+import { ResponseError } from '@tightlog/worker-utils/worker/fetch';
+import type {
+  Db,
+  SqlRow,
+  Statement,
+} from '@tightlog/worker-utils/services/libsql';
+import type { SanitizedRow } from './tables';
 import { dataColumns } from './tables';
 import type { SyncUser } from './types';
 
-export class SyncBoundaryOverflowError extends Error {
+class SyncBoundaryOverflowError extends ResponseError {
   constructor() {
-    super('sync_boundary_overflow');
+    super('sync_boundary_overflow' satisfies SyncErrorCode, 503);
   }
 }
 
@@ -39,6 +45,8 @@ function userFromRow(row: UserRow): SyncUser {
 
 const USER_ID_BY_KEY_HASH = '(SELECT id FROM users WHERE key_hash = ?)';
 
+const NOTICE_FOR_KEY_HASH = `(key_hash = ? OR (key_hash IS NULL AND user_id = ${USER_ID_BY_KEY_HASH}))`;
+
 const MAX_ACK_IDS = 200;
 
 const READBACK_CHUNK = 99;
@@ -49,26 +57,35 @@ export const PULL_PAGE_SIZE = 200;
 
 const MAX_BOUNDARY_COHORT = 2_000;
 
-export type IdentitySummary = {
+export interface IdentitySummary {
   known: boolean;
   catches: number;
-};
+}
 
-export type UserMeta = {
+export interface UserMeta {
   anglerName?: string | null;
   clerkUserId?: string | null;
   email?: string | null;
   accountName?: string | null;
-};
+}
 
-type DeviceMeta = {
+interface DeviceMeta {
   deviceId: string;
   platform: string | null;
   model: string | null;
   osName: string | null;
   osVersion: string | null;
   appVersion: string | null;
-};
+}
+
+export interface MediaObjectRow {
+  user_id: string;
+  basename: string;
+  bytes: number;
+  content_type: string;
+  created_at: string;
+  committed: number;
+}
 
 interface RecoveryNoticeRow {
   id: string;
@@ -76,16 +93,16 @@ interface RecoveryNoticeRow {
   created_at: string;
 }
 
-function syncSelectColumns(table: SyncTable): string {
+function syncSelectColumns(table: SyncTableName): string {
   return ['id', ...dataColumns(table), 'updated_at_ms', 'deleted_at'].join(
     ', ',
   );
 }
 
 export class SyncRepo {
-  private readonly db: SyncDb;
+  private readonly db: Db;
 
-  constructor(db: SyncDb) {
+  constructor(db: Db) {
     this.db = db;
   }
 
@@ -115,7 +132,7 @@ export class SyncRepo {
     return userFromRow(created);
   }
 
-  private insertUserIfMissing(keyHash: string): SyncStatement {
+  private insertUserIfMissing(keyHash: string): Statement {
     return this.db
       .prepare(
         `INSERT INTO users (id, key_hash) VALUES (?, ?)
@@ -150,26 +167,26 @@ export class SyncRepo {
     const result = await this.db
       .prepare(
         `SELECT id, kind, created_at FROM recovery_notices
-         WHERE user_id = ${USER_ID_BY_KEY_HASH} AND read_at IS NULL
+         WHERE ${NOTICE_FOR_KEY_HASH} AND read_at IS NULL
          ORDER BY created_at ASC`,
       )
-      .bind(keyHash)
+      .bind(keyHash, keyHash)
       .all<RecoveryNoticeRow>();
     return result.results;
   }
 
-  markRecoveryNoticesRead(keyHash: string, allIds: string[]): SyncStatement {
+  markRecoveryNoticesRead(keyHash: string, allIds: string[]): Statement {
     const ids = allIds.slice(0, MAX_ACK_IDS);
     const placeholders = ids.map(() => '?').join(', ');
     return this.db
       .prepare(
         `UPDATE recovery_notices SET read_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-         WHERE user_id = ${USER_ID_BY_KEY_HASH} AND id IN (${placeholders})`,
+         WHERE ${NOTICE_FOR_KEY_HASH} AND id IN (${placeholders})`,
       )
-      .bind(keyHash, ...ids);
+      .bind(keyHash, keyHash, ...ids);
   }
 
-  updateUserMeta(userId: string, meta: UserMeta): SyncStatement {
+  updateUserMeta(userId: string, meta: UserMeta): Statement {
     return this.db
       .prepare(
         `UPDATE users SET
@@ -188,7 +205,7 @@ export class SyncRepo {
       );
   }
 
-  setKeyEscrow(userId: string, ciphertext: string | null): SyncStatement {
+  setKeyEscrow(userId: string, ciphertext: string | null): Statement {
     return this.db
       .prepare(
         `UPDATE users SET
@@ -199,7 +216,7 @@ export class SyncRepo {
       .bind(ciphertext, ciphertext, userId);
   }
 
-  upsertDevice(userId: string, device: DeviceMeta): SyncStatement {
+  upsertDevice(userId: string, device: DeviceMeta): Statement {
     return this.db
       .prepare(
         `INSERT INTO devices
@@ -233,7 +250,7 @@ export class SyncRepo {
     return row ? userFromRow(row) : null;
   }
 
-  claimRevenueCatId(userId: string, appUserId: string): SyncStatement {
+  claimRevenueCatId(userId: string, appUserId: string): Statement {
     return this.db
       .prepare(
         `UPDATE users SET revenuecat_app_user_id = ?1
@@ -312,7 +329,19 @@ export class SyncRepo {
 
     statements.push(
       this.db
-        .prepare('UPDATE users SET key_hash = ? WHERE id = ?')
+        .prepare(
+          `INSERT INTO recovery_notices (id, user_id, kind, key_hash)
+           VALUES (?, ?, 'account_relinked', ?)`,
+        )
+        .bind(crypto.randomUUID(), user.id, user.keyHash),
+      this.db
+        .prepare(
+          `UPDATE users SET
+             key_hash = ?,
+             key_escrow = NULL,
+             key_escrow_updated_at = NULL
+           WHERE id = ?`,
+        )
         .bind(newKeyHash, user.id),
     );
 
@@ -320,7 +349,7 @@ export class SyncRepo {
   }
 
   async listSince(
-    table: SyncTable,
+    table: SyncTableName,
     keyHash: string,
     sinceMs: number,
   ): Promise<{ rows: SqlRow[]; nextSince: number | null }> {
@@ -383,7 +412,8 @@ export class SyncRepo {
          VALUES (?, ?, ?, ?)
          ON CONFLICT (user_id, basename) DO UPDATE SET
            bytes = excluded.bytes,
-           content_type = excluded.content_type`,
+           content_type = excluded.content_type,
+           committed = 1`,
       )
       .bind(userId, object.basename, object.bytes, object.contentType)
       .run();
@@ -401,11 +431,144 @@ export class SyncRepo {
     const result = await this.db
       .prepare(
         `SELECT basename FROM media_objects
-         WHERE user_id = ? AND basename IN (${placeholders})`,
+         WHERE user_id = ? AND committed = 1 AND basename IN (${placeholders})`,
       )
       .bind(userId, ...basenames)
       .all<{ basename: string }>();
     return new Set(result.results.map(row => row.basename));
+  }
+
+  async hasMediaObject(userId: string, basename: string): Promise<boolean> {
+    const row = await this.db
+      .prepare(
+        'SELECT 1 AS found FROM media_objects WHERE user_id = ? AND basename = ?',
+      )
+      .bind(userId, basename)
+      .first<{ found: number }>();
+    return row !== null;
+  }
+
+  async reserveMediaObject(
+    userId: string,
+    object: { basename: string; bytes: number; contentType: string },
+    quota: { maxBytes: number; maxObjects: number },
+  ): Promise<boolean> {
+    const row = await this.db
+      .prepare(
+        `INSERT INTO media_objects (user_id, basename, bytes, content_type, committed)
+         SELECT ?1, ?2, ?3, ?4, 0
+         WHERE (SELECT COUNT(*) FROM media_objects WHERE user_id = ?1) < ?5
+           AND (SELECT COALESCE(SUM(bytes), 0) FROM media_objects WHERE user_id = ?1) + ?3 <= ?6
+         ON CONFLICT (user_id, basename) DO NOTHING
+         RETURNING basename`,
+      )
+      .bind(
+        userId,
+        object.basename,
+        object.bytes,
+        object.contentType,
+        quota.maxObjects,
+        quota.maxBytes,
+      )
+      .first<{ basename: string }>();
+    return row !== null;
+  }
+
+  async releaseMediaReservation(
+    userId: string,
+    basename: string,
+  ): Promise<void> {
+    await this.db
+      .prepare(
+        `DELETE FROM media_objects
+         WHERE user_id = ? AND basename = ? AND committed = 0`,
+      )
+      .bind(userId, basename)
+      .run();
+  }
+
+  async reserveUploadBudget(
+    day: string,
+    ipHash: string,
+    bytes: number,
+    maxBytes: number,
+  ): Promise<boolean> {
+    const row = await this.db
+      .prepare(
+        `INSERT INTO media_upload_budget (day, ip_hash, bytes)
+         SELECT ?1, ?2, ?3 WHERE ?3 <= ?4
+         ON CONFLICT (day, ip_hash) DO UPDATE SET
+           bytes = media_upload_budget.bytes + excluded.bytes
+         WHERE media_upload_budget.bytes + excluded.bytes <= ?4
+         RETURNING bytes`,
+      )
+      .bind(day, ipHash, bytes, maxBytes)
+      .first<{ bytes: number }>();
+    return row !== null;
+  }
+
+  async refundUploadBudget(
+    day: string,
+    ipHash: string,
+    bytes: number,
+  ): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE media_upload_budget SET bytes = MAX(bytes - ?, 0)
+         WHERE day = ? AND ip_hash = ?`,
+      )
+      .bind(bytes, day, ipHash)
+      .run();
+  }
+
+  async pruneUploadBudget(beforeDay: string): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM media_upload_budget WHERE day < ?')
+      .bind(beforeDay)
+      .run();
+  }
+
+  async deleteUnreferencedMedia(
+    createdBefore: string,
+    limit: number,
+  ): Promise<MediaObjectRow[]> {
+    const result = await this.db
+      .prepare(
+        `DELETE FROM media_objects WHERE rowid IN (
+           SELECT mo.rowid FROM media_objects mo
+           WHERE mo.created_at < ?
+             AND NOT EXISTS (
+               SELECT 1 FROM catch_media cm
+               WHERE cm.user_id = mo.user_id AND cm.basename = mo.basename
+             )
+           LIMIT ?
+         )
+         RETURNING user_id, basename, bytes, content_type, created_at, committed`,
+      )
+      .bind(createdBefore, limit)
+      .all<MediaObjectRow>();
+    return result.results;
+  }
+
+  async restoreMediaObjects(rows: MediaObjectRow[]): Promise<void> {
+    await this.db.batch(
+      rows.map(row =>
+        this.db
+          .prepare(
+            `INSERT INTO media_objects (user_id, basename, bytes, content_type, created_at, committed)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT (user_id, basename) DO NOTHING`,
+          )
+          .bind(
+            row.user_id,
+            row.basename,
+            row.bytes,
+            row.content_type,
+            row.created_at,
+            row.committed,
+          ),
+      ),
+    );
   }
 
   async listOrphanedMediaBasenames(
@@ -446,7 +609,7 @@ export class SyncRepo {
   }
 
   async upsertRows(
-    table: SyncTable,
+    table: SyncTableName,
     keyHash: string,
     rows: SanitizedRow[],
   ): Promise<SqlRow[]> {
@@ -519,7 +682,7 @@ export class SyncRepo {
     return merged;
   }
 
-  batch(statements: SyncStatement[]): Promise<{ results: SqlRow[] }[]> {
+  batch(statements: Statement[]): Promise<{ results: SqlRow[] }[]> {
     return this.db.batch(statements);
   }
 }

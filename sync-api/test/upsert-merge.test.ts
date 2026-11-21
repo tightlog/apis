@@ -1,6 +1,6 @@
 import type { Client } from '@libsql/client';
 import { beforeEach, describe, expect, test } from 'vitest';
-import type { SyncDb } from '../src/db';
+import type { Db } from '@tightlog/worker-utils/services/libsql';
 import { SyncRepo } from '../src/repo';
 import { syncRowFromDb } from '../src/tables';
 import { catchRow } from './__fixtures__/catchRow.fixture';
@@ -10,7 +10,7 @@ const KEY = 'a'.repeat(64);
 const OTHER_KEY = 'b'.repeat(64);
 
 let client: Client;
-let db: SyncDb;
+let db: Db;
 let repo: SyncRepo;
 
 beforeEach(async () => {

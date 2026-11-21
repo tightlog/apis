@@ -1,18 +1,7 @@
 import type { Env } from './types';
-import { createLibsqlDb } from '@tightlog/worker-utils/libsql';
-import type {
-  BindValue,
-  Db,
-  SqlRow,
-  Statement,
-} from '@tightlog/worker-utils/libsql';
+import { createLibsqlDb } from '@tightlog/worker-utils/services/libsql';
+import type { Db } from '@tightlog/worker-utils/services/libsql';
 
-export type { BindValue, SqlRow };
-
-export type SyncStatement = Statement;
-
-export type SyncDb = Db;
-
-export function getDb(env: Env): SyncDb {
+export function getDb(env: Env): Db {
   return createLibsqlDb(env);
 }

@@ -1,24 +1,24 @@
 const APP_USER_ID_PATTERN = /^[A-Za-z0-9$:_.@-]{8,128}$/;
-const STORE_TRANSACTION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
-export function isAppUserId(value: string): boolean {
+export function isRevenueCatAppUserId(value: string): boolean {
   return APP_USER_ID_PATTERN.test(value);
 }
+
+const STORE_TRANSACTION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
 export function isStoreTransactionId(value: string): boolean {
   return STORE_TRANSACTION_ID_PATTERN.test(value);
 }
 
 /**
- * Own sync key, or `E2E_REVENUECAT_APP_USER_ID` when that variable is set.
- * Any other id lets the first writer own purchase restore.
+ * Any other id would let the first writer own purchase restore.
  */
 export function canClaimRevenueCatId(
   revenueCatAppUserId: string | null | undefined,
   keyHash: string,
   pinnedAppUserId?: string | null,
 ): revenueCatAppUserId is string {
-  if (!revenueCatAppUserId || !isAppUserId(revenueCatAppUserId)) {
+  if (!revenueCatAppUserId || !isRevenueCatAppUserId(revenueCatAppUserId)) {
     return false;
   }
 

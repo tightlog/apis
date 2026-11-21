@@ -1,13 +1,13 @@
-import { json } from '@tightlog/worker-utils';
+import { json } from '@tightlog/worker-utils/request/json';
 import {
   fetchSubscriber,
   hasActiveEntitlement,
   ownsActiveSubscription,
   revenueCatSettings,
-} from '@tightlog/worker-utils/revenuecat';
-import { isAppUserId, isStoreTransactionId } from '../revenuecat';
+} from '@tightlog/worker-utils/services/revenuecat';
+import { isRevenueCatAppUserId, isStoreTransactionId } from '../revenuecat';
 import type { Env } from '../types';
-import type { SyncErrorBody } from '@tightlog/protocol/sync';
+import type { SyncErrorBody } from '../http';
 
 const LOOKUP_TIMEOUT_MS = 5000;
 
@@ -18,17 +18,17 @@ export const revenueCatService = {
     storeTransactionId: string,
     nowMs: number,
   ): Promise<true | Response> => {
-    const settings = revenueCatSettings(env);
-    if (!settings) {
-      return json<SyncErrorBody>({ error: 'not_configured' }, 501);
-    }
-
-    if (!isAppUserId(appUserId)) {
+    if (!isRevenueCatAppUserId(appUserId)) {
       return json<SyncErrorBody>({ error: 'invalid_app_user_id' }, 400);
     }
 
     if (!storeTransactionId || !isStoreTransactionId(storeTransactionId)) {
       return json<SyncErrorBody>({ error: 'transaction_required' }, 400);
+    }
+
+    const settings = revenueCatSettings(env);
+    if (!settings) {
+      return json<SyncErrorBody>({ error: 'not_configured' }, 501);
     }
 
     const lookup = await fetchSubscriber(

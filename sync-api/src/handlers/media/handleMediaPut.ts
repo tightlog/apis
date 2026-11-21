@@ -1,37 +1,56 @@
-import { checkContentLength, json } from '@tightlog/worker-utils';
+import { bodyErrorResponse } from '@tightlog/worker-utils/request/body';
+import { checkContentLength } from '@tightlog/worker-utils/request/size';
+import { clientKey } from '@tightlog/worker-utils/request/rate-limit';
+import { json } from '@tightlog/worker-utils/request/json';
+import { sha256HexOfText } from '@tightlog/worker-utils/utils/sha256';
 import {
-  MAX_MEDIA_BYTES,
-  MAX_USER_MEDIA_BYTES,
-  MAX_USER_MEDIA_OBJECTS,
-  mediaKey,
-  parseBasename,
-} from '../../media';
+  parseContentAddressedBasename,
+  mediaQuotaExceeded,
+  SYNC_MEDIA_MAX_BYTES,
+  SYNC_MEDIA_QUOTA_BYTES,
+  SYNC_MEDIA_QUOTA_OBJECTS,
+} from '../../http';
+import { MAX_IP_DAILY_UPLOAD_BYTES, mediaKey, utcDay } from '../../media';
+import type { SyncRepo } from '../../repo';
 import type { Env } from '../../types';
-import { mediaCaller } from './mediaCaller';
-import type { SyncErrorBody } from '@tightlog/protocol/sync';
+import { mediaWriter } from './mediaCaller';
+import type { SyncErrorBody } from '../../http';
+
+async function quotaRefusal(
+  repo: SyncRepo,
+  userId: string,
+  declared: number,
+): Promise<Response> {
+  const quota =
+    mediaQuotaExceeded(await repo.mediaUsage(userId), declared) ??
+    'media_quota_bytes';
+  return json<SyncErrorBody>({ error: quota }, 413);
+}
 
 export async function handleMediaPut(
   request: Request,
   env: Env,
   basename: string,
 ): Promise<Response> {
-  const parsed = parseBasename(basename);
+  const parsed = parseContentAddressedBasename(basename);
 
   if (!parsed) {
     return json<SyncErrorBody>({ error: 'invalid_basename' }, 400);
   }
 
-  const caller = await mediaCaller(request, env);
+  const caller = await mediaWriter(request, env);
 
   if (caller instanceof Response) {
     return caller;
   }
 
-  const length = checkContentLength(request, MAX_MEDIA_BYTES);
+  const length = checkContentLength(request, SYNC_MEDIA_MAX_BYTES);
   if (!length.ok) {
-    return length.reason === 'too_large'
-      ? json<SyncErrorBody>({ error: 'payload_too_large' }, 413)
-      : json<SyncErrorBody>({ error: 'content_length_required' }, 411);
+    return bodyErrorResponse(
+      length.reason === 'too_large'
+        ? 'payload_too_large'
+        : 'content_length_required',
+    );
   }
 
   if (!request.body || request.headers.get('content-length') === '0') {
@@ -39,38 +58,68 @@ export async function handleMediaPut(
   }
 
   const declared = Number(request.headers.get('content-length'));
-  const usage = await caller.repo.mediaUsage(caller.userId);
-  const existing = await caller.repo.listExistingMediaBasenames(caller.userId, [
-    basename,
-  ]);
-  const replacing = existing.has(basename);
+  const { bucket, repo, userId } = caller;
 
-  if (!replacing && usage.objects >= MAX_USER_MEDIA_OBJECTS) {
-    return json<SyncErrorBody>({ error: 'media_quota_objects' }, 413);
+  const reserved = await repo.reserveMediaObject(
+    userId,
+    { basename, bytes: declared, contentType: parsed.contentType },
+    { maxBytes: SYNC_MEDIA_QUOTA_BYTES, maxObjects: SYNC_MEDIA_QUOTA_OBJECTS },
+  );
+
+  if (!reserved && !(await repo.hasMediaObject(userId, basename))) {
+    return quotaRefusal(repo, userId, declared);
   }
 
-  if (!replacing && usage.bytes + declared > MAX_USER_MEDIA_BYTES) {
-    return json<SyncErrorBody>({ error: 'media_quota_bytes' }, 413);
+  const day = utcDay(Date.now());
+  const ipHash = await sha256HexOfText(clientKey(request));
+
+  const release = async (): Promise<void> => {
+    if (reserved) {
+      await repo.releaseMediaReservation(userId, basename);
+    }
+  };
+
+  if (
+    !(await repo.reserveUploadBudget(
+      day,
+      ipHash,
+      declared,
+      MAX_IP_DAILY_UPLOAD_BYTES,
+    ))
+  ) {
+    await release();
+    return json<SyncErrorBody>({ error: 'media_quota_daily' }, 429);
   }
 
-  const key = mediaKey(caller.userId, basename);
-  const { bucket } = caller;
+  const releaseAll = async (): Promise<void> => {
+    await release();
+    await repo.refundUploadBudget(day, ipHash, declared);
+  };
+
   let stored: R2Object | null;
 
   try {
-    stored = await bucket.put(key, request.body, {
+    stored = await bucket.put(mediaKey(userId, basename), request.body, {
       httpMetadata: { contentType: parsed.contentType },
       sha256: parsed.sha256,
     });
-  } catch {
-    return json<SyncErrorBody>({ error: 'checksum_mismatch' }, 422);
+  } catch (error) {
+    await releaseAll();
+    // The R2 binding puts the R2 error code at the end of the message. 10037
+    // is BadDigest: the body does not match the sha256 given with the put.
+    if (error instanceof Error && error.message.endsWith('(10037)')) {
+      return json<SyncErrorBody>({ error: 'checksum_mismatch' }, 422);
+    }
+
+    throw error;
   }
 
   if (!stored) {
+    await releaseAll();
     return json<SyncErrorBody>({ error: 'upload_failed' }, 500);
   }
 
-  await caller.repo.upsertMediaObject(caller.userId, {
+  await repo.upsertMediaObject(userId, {
     basename,
     bytes: stored.size,
     contentType: parsed.contentType,

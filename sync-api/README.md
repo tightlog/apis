@@ -8,15 +8,15 @@ This repository is the public mirror of the sync Worker. Deploy hostnames, Cloud
 
 - Registers a device by key hash and syncs logbook rows (push / pull)
 - Stores catch media in R2
-- Optional [Clerk](https://clerk.com) link for lost-phone adopt
+- Optional [Clerk](https://clerk.com) account link
 - Optional [RevenueCat](https://www.revenuecat.com) check for purchase-based restore
-- [Apple App Attest](https://developer.apple.com/documentation/devicecheck/establishing_your_app_s_integrity) on the gated adopt routes when `APP_ATTEST_ENV=production`
+- [Apple App Attest](https://developer.apple.com/documentation/devicecheck/establishing_your_app_s_integrity) on the gated adopt-purchase route when `APP_ATTEST_ENV=production`
 
 ## Requirements
 
 - [Bun](https://bun.sh)
 - A Turso database
-- Optional: Clerk secret (and JWT key) for account link and adopt
+- Optional: Clerk secret (and JWT key) for the account link
 - Optional: RevenueCat secret key for purchase-based restore
 - Optional: Apple Team ID and App Attest bundle ids for production attest
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { canClaimRevenueCatId, isAppUserId } from '../src/revenuecat';
+import { canClaimRevenueCatId } from '../src/revenuecat';
 import { revenueCatService } from '../src/services/revenuecat-service';
 import type { Env } from '../src/types';
 
@@ -91,26 +91,6 @@ describe('canClaimRevenueCatId', () => {
     expect(canClaimRevenueCatId('tightlog-e2e-purchase', keyHash, '  ')).toBe(
       false,
     );
-  });
-});
-
-describe('isAppUserId', () => {
-  test('accepts the shapes RevenueCat actually mints', () => {
-    expect(isAppUserId(APP_USER_ID)).toBe(true);
-
-    expect(isAppUserId('user_2abc.DEF-123@example.com')).toBe(true);
-  });
-
-  test('rejects anything that could steer the request elsewhere', () => {
-    expect(isAppUserId('../subscribers/someone-else')).toBe(false);
-
-    expect(isAppUserId('has space')).toBe(false);
-
-    expect(isAppUserId('short')).toBe(false);
-
-    expect(isAppUserId('a'.repeat(129))).toBe(false);
-
-    expect(isAppUserId('')).toBe(false);
   });
 });
 

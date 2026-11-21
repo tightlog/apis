@@ -1,22 +1,20 @@
 import type { Value } from '@libsql/client/web';
 import { z } from 'zod';
-import type { SqlRow } from './db';
+import { SYNC_TEXT_MAX, SYNC_ROW_FIELDS } from './http';
+import type { SyncField, SyncTableName } from './http';
+import type { SqlRow } from '@tightlog/worker-utils/services/libsql';
 import type { SyncRow } from './types';
 
-export const MAX_PUSH_ROWS = 500;
 export const MAX_FUTURE_SKEW_MS = 60_000;
-
-const MAX_STRING = 10_000;
-const MAX_MEDIA_POSITION = 5;
 
 type DbValue = string | number | null;
 type SyncValue = string | number | boolean | null;
 
-type Field = {
+interface Field {
   column: string;
   toDb: (value: unknown) => DbValue;
   fromDb: (value: Value) => SyncValue;
-};
+}
 
 const syncValueSchema = z
   .union([z.string(), z.number(), z.boolean(), z.null()])
@@ -26,139 +24,146 @@ export const syncRowSchema = z.record(z.string(), syncValueSchema).catch({});
 
 export type SyncRowInput = z.infer<typeof syncRowSchema>;
 
-export type SanitizedRow = {
+export interface SanitizedRow {
   id: string;
   updatedAtMs: number;
   deletedAt: string | null;
   values: DbValue[];
-};
+}
 
 function clip(value: string): string {
-  return value.slice(0, MAX_STRING);
+  return value.slice(0, SYNC_TEXT_MAX);
 }
 
-function text(column: string): Field {
-  return {
-    column,
-    toDb: value => (typeof value === 'string' ? clip(value) : ''),
-    fromDb: value => (typeof value === 'string' ? value : ''),
-  };
+function codec(field: SyncField): Omit<Field, 'column'> {
+  switch (field.type) {
+    case 'text': {
+      return {
+        toDb: value => (typeof value === 'string' ? clip(value) : ''),
+        fromDb: value => (typeof value === 'string' ? value : ''),
+      };
+    }
+    case 'textOrNull': {
+      return {
+        toDb: value => (typeof value === 'string' ? clip(value) : null),
+        fromDb: value => (typeof value === 'string' ? value : null),
+      };
+    }
+    case 'number': {
+      return {
+        toDb: value => (typeof value === 'number' ? value : null),
+        fromDb: value => (typeof value === 'number' ? value : null),
+      };
+    }
+    case 'boolean': {
+      const fallback = field.fallback ? 1 : 0;
+      return {
+        toDb: value =>
+          typeof value === 'boolean' ? (value ? 1 : 0) : fallback,
+        fromDb: value => value === 1,
+      };
+    }
+    case 'integer': {
+      return {
+        toDb: value =>
+          typeof value === 'number' && Number.isFinite(value)
+            ? Math.min(Math.max(Math.trunc(value), 0), field.max)
+            : 0,
+        fromDb: value => (typeof value === 'number' ? value : 0),
+      };
+    }
+    case 'oneOf': {
+      return {
+        toDb: value =>
+          typeof value === 'string' && field.values.includes(value)
+            ? value
+            : field.fallback,
+        fromDb: value => (typeof value === 'string' ? value : field.fallback),
+      };
+    }
+    default: {
+      return field satisfies never;
+    }
+  }
 }
 
-function textOrNull(column: string): Field {
-  return {
-    column,
-    toDb: value => (typeof value === 'string' ? clip(value) : null),
-    fromDb: value => (typeof value === 'string' ? value : null),
-  };
-}
+const COLUMNS = {
+  catches: {
+    species: 'species',
+    weightKg: 'weight_kg',
+    lengthCm: 'length_cm',
+    caughtAt: 'caught_at',
+    spotId: 'spot_id',
+    sessionId: 'session_id',
+    method: 'method',
+    weather: 'weather',
+    airTempC: 'air_temp_c',
+    windKph: 'wind_kph',
+    pressureHpa: 'pressure_hpa',
+    latitude: 'latitude',
+    longitude: 'longitude',
+    released: 'released',
+    landed: 'landed',
+    pinned: 'pinned',
+    bait: 'bait',
+    hookBait: 'hook_bait',
+    peg: 'peg',
+    swim: 'swim',
+    rigId: 'rig_uuid',
+    notes: 'notes',
+    createdAt: 'created_at',
+  },
+  spots: {
+    name: 'name',
+    waterType: 'water_type',
+    latitude: 'latitude',
+    longitude: 'longitude',
+    notes: 'notes',
+    createdAt: 'created_at',
+  },
+  sessions: {
+    name: 'name',
+    startedAt: 'started_at',
+    endedAt: 'ended_at',
+    notes: 'notes',
+    rodCount: 'rod_count',
+    setup: 'setup',
+    createdAt: 'created_at',
+  },
+  catch_media: {
+    catchId: 'catch_id',
+    basename: 'basename',
+    kind: 'kind',
+    position: 'position',
+    createdAt: 'created_at',
+  },
+} satisfies {
+  [T in SyncTableName]: Record<keyof (typeof SYNC_ROW_FIELDS)[T], string>;
+};
 
-function real(column: string): Field {
-  return {
-    column,
-    toDb: value => (typeof value === 'number' ? value : null),
-    fromDb: value => (typeof value === 'number' ? value : null),
-  };
-}
-
-function bool(column: string, fallback: 0 | 1 = 0): Field {
-  return {
-    column,
-    toDb: value => (typeof value === 'boolean' ? (value ? 1 : 0) : fallback),
-    fromDb: value => value === 1,
-  };
-}
-
-function boundedInt(column: string, max: number): Field {
-  return {
-    column,
-    toDb: value => {
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        return 0;
-      }
-
-      return Math.min(Math.max(Math.trunc(value), 0), max);
-    },
-    fromDb: value => (typeof value === 'number' ? value : 0),
-  };
-}
-
-function oneOf(
-  column: string,
-  allowed: readonly string[],
-  fallback: string,
-): Field {
-  return {
-    column,
-    toDb: value =>
-      typeof value === 'string' && allowed.includes(value) ? value : fallback,
-    fromDb: value => (typeof value === 'string' ? value : fallback),
-  };
+function buildFields(
+  table: SyncTableName,
+): readonly (readonly [string, Field])[] {
+  const columns: Record<string, string> = COLUMNS[table];
+  const spec: Record<string, SyncField> = SYNC_ROW_FIELDS[table];
+  return Object.entries(spec).map(([name, field]) => [
+    name,
+    { column: columns[name] ?? name, ...codec(field) },
+  ]);
 }
 
 const TABLE_FIELDS = {
-  catches: [
-    ['species', text('species')],
-    ['weightKg', real('weight_kg')],
-    ['lengthCm', real('length_cm')],
-    ['caughtAt', text('caught_at')],
-    ['spotId', textOrNull('spot_id')],
-    ['sessionId', textOrNull('session_id')],
-    ['method', text('method')],
-    ['weather', text('weather')],
-    ['airTempC', real('air_temp_c')],
-    ['windKph', real('wind_kph')],
-    ['pressureHpa', real('pressure_hpa')],
-    ['latitude', real('latitude')],
-    ['longitude', real('longitude')],
-    ['released', bool('released')],
-    ['landed', bool('landed', 1)],
-    ['pinned', bool('pinned')],
-    ['bait', text('bait')],
-    ['hookBait', text('hook_bait')],
-    ['peg', text('peg')],
-    ['swim', text('swim')],
-    ['rigId', textOrNull('rig_uuid')],
-    ['notes', text('notes')],
-    ['createdAt', text('created_at')],
-  ],
-  spots: [
-    ['name', text('name')],
-    ['waterType', text('water_type')],
-    ['latitude', real('latitude')],
-    ['longitude', real('longitude')],
-    ['notes', text('notes')],
-    ['createdAt', text('created_at')],
-  ],
-  sessions: [
-    ['name', textOrNull('name')],
-    ['startedAt', text('started_at')],
-    ['endedAt', textOrNull('ended_at')],
-    ['notes', text('notes')],
-    ['rodCount', real('rod_count')],
-    ['setup', text('setup')],
-    ['createdAt', text('created_at')],
-  ],
-  catch_media: [
-    ['catchId', text('catch_id')],
-    ['basename', text('basename')],
-    ['kind', oneOf('kind', ['photo', 'video'], 'photo')],
-    ['position', boundedInt('position', MAX_MEDIA_POSITION)],
-    ['createdAt', text('created_at')],
-  ],
-} satisfies Record<string, readonly (readonly [string, Field])[]>;
+  catches: buildFields('catches'),
+  spots: buildFields('spots'),
+  sessions: buildFields('sessions'),
+  catch_media: buildFields('catch_media'),
+} satisfies Record<SyncTableName, readonly (readonly [string, Field])[]>;
 
-export type SyncTable = keyof typeof TABLE_FIELDS;
-
-export function isSyncTable(value: string): value is SyncTable {
-  return Object.hasOwn(TABLE_FIELDS, value);
-}
-
-function fields(table: SyncTable): readonly (readonly [string, Field])[] {
+function fields(table: SyncTableName): readonly (readonly [string, Field])[] {
   return TABLE_FIELDS[table];
 }
 
-export function dataColumns(table: SyncTable): string[] {
+export function dataColumns(table: SyncTableName): string[] {
   return fields(table).map(([, field]) => field.column);
 }
 
@@ -167,7 +172,7 @@ const MEDIA_BASENAME_INDEX = fields('catch_media').findIndex(
 );
 
 export function sanitizeRow(
-  table: SyncTable,
+  table: SyncTableName,
   row: SyncRowInput,
   nowMs?: number,
 ): SanitizedRow | null {
@@ -200,7 +205,7 @@ export function sanitizeRow(
   };
 }
 
-export function syncRowFromDb(table: SyncTable, dbRow: SqlRow): SyncRow {
+export function syncRowFromDb(table: SyncTableName, dbRow: SqlRow): SyncRow {
   const idValue = dbRow['id'];
   const updatedAtMs = dbRow['updated_at_ms'];
   const syncRow: SyncRow = {

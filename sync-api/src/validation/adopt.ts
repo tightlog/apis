@@ -1,12 +1,5 @@
-import type {
-  AdoptClerkBody,
-  AdoptPurchaseBody,
-} from '@tightlog/protocol/sync';
+import type { AdoptPurchaseBody } from '../http';
 import { z } from 'zod';
-
-export const adoptSchema = z.object({
-  clerkToken: z.string().catch(''),
-} satisfies Record<keyof AdoptClerkBody, z.ZodType>);
 
 export const adoptPurchaseSchema = z.object({
   appUserId: z.string().catch(''),

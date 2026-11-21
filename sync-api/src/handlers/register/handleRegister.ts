@@ -1,5 +1,6 @@
-import type { RegisterResponse, SyncErrorBody } from '@tightlog/protocol/sync';
-import { json, parseJsonBody } from '@tightlog/worker-utils';
+import type { RegisterResponse, SyncErrorBody } from '../../http';
+import { json } from '@tightlog/worker-utils/request/json';
+import { parseJsonBody } from '@tightlog/worker-utils/request/parse-body';
 import { getDb } from '../../db';
 import type { UserMeta } from '../../repo';
 import { SyncRepo } from '../../repo';
@@ -7,17 +8,19 @@ import { canClaimRevenueCatId } from '../../revenuecat';
 import { clerkService } from '../../services/clerk-service';
 import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
-import { metaBodyLimit, registerSchema } from '../../validation/register';
+import { metaBodyLimit } from '../../constants/body-limits';
+import { registerSchema } from '../../validation/register';
 
 export async function handleRegister(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  const keyHash = await authenticate(request, env, env.SYNC_RATE_LIMITER);
-
-  if (keyHash instanceof Response) {
-    return keyHash;
+  const caller = await authenticate(request, env, env.SYNC_RATE_LIMITER);
+  if (caller instanceof Response) {
+    return caller;
   }
+
+  const { keyHash } = caller;
 
   const input = await parseJsonBody(request, metaBodyLimit, registerSchema);
 

@@ -1,6 +1,6 @@
-import { SCHEMA_VERSION_HEADER } from '@tightlog/protocol/sync';
-import { json } from '@tightlog/worker-utils';
-import type { SyncErrorBody } from '@tightlog/protocol/sync';
+import { SCHEMA_VERSION_HEADER } from './http';
+import { json } from '@tightlog/worker-utils/request/json';
+import type { SyncErrorBody } from './http';
 
 const MIN_SUPPORTED_SCHEMA_VERSION = 1;
 

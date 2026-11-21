@@ -1,6 +1,9 @@
 export const SYNODIC_MONTH = 29.530588853;
 
 const NEW_MOON_EPOCH_MS = Date.UTC(2000, 0, 6, 18, 14);
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
 
 export type MoonPhaseName =
   | 'newMoon'
@@ -14,48 +17,78 @@ export type MoonPhaseName =
 
 export type BiteRating = 'excellent' | 'good' | 'fair' | 'slow';
 
-export type BiteWindow = { start: Date; end: Date };
+export interface BiteWindow {
+  start: Date;
+  end: Date;
+}
 
-export type SolunarForecast = {
+interface LocalDay {
+  day: string;
+  utcOffsetMinutes: number;
+}
+
+export interface SolunarForecast {
   age: number;
   illumination: number;
   phase: MoonPhaseName;
   rating: BiteRating;
+  score: number;
   majors: BiteWindow[];
   minors: BiteWindow[];
-};
+}
 
-export type LunarPhaseEvents = {
-  nextNewMoon: Date;
-  nextFullMoon: Date;
-};
+export interface SolunarDay extends SolunarForecast {
+  day: string;
+  noon: Date;
+}
 
-export type SolunarDay = {
-  date: Date;
-  age: number;
-  phase: MoonPhaseName;
-  rating: BiteRating;
-  score: number;
-};
+export function localClock(at: Date, utcOffsetMinutes: number): string {
+  return new Date(at.getTime() + utcOffsetMinutes * MINUTE_MS)
+    .toISOString()
+    .slice(0, 16);
+}
 
-export function nextLunarPhases(date: Date = new Date()): LunarPhaseEvents {
-  const age = moonAge(date);
+export function localDay(at: Date, utcOffsetMinutes: number): LocalDay {
+  return {
+    day: localClock(at, utcOffsetMinutes).slice(0, 10),
+    utcOffsetMinutes,
+  };
+}
+
+export function runtimeLocalDay(at: Date): LocalDay {
+  const midnight = new Date(at.getFullYear(), at.getMonth(), at.getDate());
+  return localDay(midnight, -midnight.getTimezoneOffset());
+}
+
+function localMidnightMs({ day, utcOffsetMinutes }: LocalDay): number {
+  const midnightUtc = /^\d{4}-\d{2}-\d{2}$/.test(day)
+    ? Date.parse(`${day}T00:00:00Z`)
+    : Number.NaN;
+  if (Number.isNaN(midnightUtc)) {
+    throw new RangeError(`Expected a YYYY-MM-DD day, got "${day}"`);
+  }
+
+  return midnightUtc - utcOffsetMinutes * MINUTE_MS;
+}
+
+export function nextLunarPhases(at: Date) {
+  const age = moonAge(at);
   const half = SYNODIC_MONTH / 2;
   const daysToNew = (SYNODIC_MONTH - age) % SYNODIC_MONTH;
   const daysToFull = (half - age + SYNODIC_MONTH) % SYNODIC_MONTH;
   return {
-    nextNewMoon: new Date(date.getTime() + daysToNew * 86_400_000),
-    nextFullMoon: new Date(date.getTime() + daysToFull * 86_400_000),
+    nextNewMoon: new Date(at.getTime() + daysToNew * DAY_MS),
+    nextFullMoon: new Date(at.getTime() + daysToFull * DAY_MS),
   };
 }
 
 export function moonAge(date: Date): number {
-  const days = (date.getTime() - NEW_MOON_EPOCH_MS) / 86_400_000;
+  const days = (date.getTime() - NEW_MOON_EPOCH_MS) / DAY_MS;
   const age = days % SYNODIC_MONTH;
   return age < 0 ? age + SYNODIC_MONTH : age;
 }
 
-export function moonIllumination(age: number): number {
+function moonIllumination(age: number): number {
   return (1 - Math.cos((2 * Math.PI * age) / SYNODIC_MONTH)) / 2;
 }
 
@@ -84,7 +117,7 @@ function syzygyDistance(age: number): number {
   return Math.min(age, Math.abs(age - half), SYNODIC_MONTH - age);
 }
 
-export function biteRating(age: number): BiteRating {
+function biteRating(age: number): BiteRating {
   const distance = syzygyDistance(age);
   if (distance < 1.5) {
     return 'excellent';
@@ -101,80 +134,42 @@ export function biteRating(age: number): BiteRating {
   return 'slow';
 }
 
-export function biteScore(age: number): number {
+function biteScore(age: number): number {
   const quarter = SYNODIC_MONTH / 4;
   const distance = syzygyDistance(age);
   return Math.max(0, Math.min(1, 1 - distance / quarter));
 }
 
-export function solunarOutlook(
-  days = 7,
-  from: Date = new Date(),
-): SolunarDay[] {
-  const start = new Date(from);
-  start.setHours(0, 0, 0, 0);
-
-  const outlook: SolunarDay[] = [];
-  for (let offset = 0; offset < days; offset++) {
-    const date = new Date(start);
-    date.setDate(start.getDate() + offset);
-    const midday = new Date(date);
-    midday.setHours(12, 0, 0, 0);
-    const age = moonAge(midday);
-    outlook.push({
-      date,
-      age,
-      phase: moonPhaseName(age),
-      rating: biteRating(age),
-      score: biteScore(age),
-    });
-  }
-
-  return outlook;
+function byStart(a: BiteWindow, b: BiteWindow): number {
+  return a.start.getTime() - b.start.getTime();
 }
 
-function windowAround(center: Date, halfHours: number): BiteWindow {
-  const half = halfHours * 3_600_000;
-  return {
-    start: new Date(center.getTime() - half),
-    end: new Date(center.getTime() + half),
-  };
-}
-
-export function solunarForecast(date: Date = new Date()): SolunarForecast {
-  const age = moonAge(date);
-
-  const midnight = new Date(date);
-  midnight.setHours(0, 0, 0, 0);
-
+export function solunarForecast(day: LocalDay): SolunarForecast {
+  const midnight = localMidnightMs(day);
+  const age = moonAge(new Date(midnight + 12 * HOUR_MS));
   const transitHours = (12 + age * (24 / SYNODIC_MONTH)) % 24;
-
-  const events: { hours: number; kind: 'major' | 'minor' }[] = [];
-  for (const offset of [0, 12]) {
-    events.push({ hours: (transitHours + offset) % 24, kind: 'major' });
-  }
-
-  for (const offset of [6, 18]) {
-    events.push({ hours: (transitHours + offset) % 24, kind: 'minor' });
-  }
-
-  const majors: BiteWindow[] = [];
-  const minors: BiteWindow[] = [];
-  for (const event of [...events].sort((a, b) => a.hours - b.hours)) {
-    const center = new Date(midnight.getTime() + event.hours * 3_600_000);
-    if (event.kind === 'major') {
-      majors.push(windowAround(center, 1));
-    } else {
-      minors.push(windowAround(center, 0.75));
-    }
-  }
+  const window = (offsetHours: number, halfHours: number): BiteWindow => {
+    const center = midnight + ((transitHours + offsetHours) % 24) * HOUR_MS;
+    const half = halfHours * HOUR_MS;
+    return { start: new Date(center - half), end: new Date(center + half) };
+  };
 
   return {
     age,
     illumination: moonIllumination(age),
     phase: moonPhaseName(age),
     rating: biteRating(age),
-    majors,
-    minors,
+    score: biteScore(age),
+    majors: [window(0, 1), window(12, 1)].sort(byStart),
+    minors: [window(6, 0.75), window(18, 0.75)].sort(byStart),
   };
+}
+
+export function solunarOutlook(from: LocalDay, days: number): SolunarDay[] {
+  const start = localMidnightMs(from);
+  return Array.from({ length: days }, (_, offset) => {
+    const noon = new Date(start + offset * DAY_MS + 12 * HOUR_MS);
+    const local = localDay(noon, from.utcOffsetMinutes);
+    return { ...solunarForecast(local), day: local.day, noon };
+  });
 }

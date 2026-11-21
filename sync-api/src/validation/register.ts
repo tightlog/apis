@@ -1,7 +1,6 @@
-import type { RegisterBody } from '@tightlog/protocol/sync';
+import type { RegisterBody } from '../http';
 import { z } from 'zod';
 
-export const metaBodyLimit = 32 * 1024;
 const META_STRING = 256;
 
 const metaStringSchema = z

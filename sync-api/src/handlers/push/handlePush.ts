@@ -1,40 +1,19 @@
-import { json, parseJsonBody } from '@tightlog/worker-utils';
+import { json } from '@tightlog/worker-utils/request/json';
+import { parseJsonBody } from '@tightlog/worker-utils/request/parse-body';
 import { getDb } from '../../db';
 import { SyncRepo } from '../../repo';
 import { schemaVersionError } from '../../schema';
 import {
-  isSyncTable,
-  MAX_PUSH_ROWS,
-  sanitizeRow,
-  syncRowFromDb,
-} from '../../tables';
-import type { SanitizedRow, SyncTable } from '../../tables';
+  isSyncTableName,
+  SYNC_PUSH_MAX_BYTES,
+  SYNC_PUSH_MAX_ROWS,
+} from '../../http';
+import { sanitizeRow, syncRowFromDb } from '../../tables';
 import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
-import { pushBodyLimit, pushSchema } from '../../validation/push';
+import { pushSchema } from '../../validation/push';
 import { collectOrphanedMedia } from './collectOrphanedMedia';
-import type { SyncErrorBody } from '@tightlog/protocol/sync';
-
-type AfterPush = (
-  repo: SyncRepo,
-  env: Env,
-  keyHash: string,
-  rows: SanitizedRow[],
-) => Promise<void>;
-
-const AFTER_PUSH = {
-  catch_media: (repo, env, keyHash, rows) =>
-    env.MEDIA
-      ? collectOrphanedMedia(repo, env.MEDIA, keyHash, rows)
-      : Promise.resolve(),
-} satisfies Partial<Record<SyncTable, AfterPush>>;
-
-function afterPushFor(table: SyncTable): AfterPush | undefined {
-  // SAFETY: the `in` check above proves table is a key of AFTER_PUSH.
-  return table in AFTER_PUSH
-    ? AFTER_PUSH[table as keyof typeof AFTER_PUSH]
-    : undefined;
-}
+import type { SyncErrorBody } from '../../http';
 
 export async function handlePush(
   request: Request,
@@ -42,7 +21,7 @@ export async function handlePush(
   table: string,
   ctx: ExecutionContext,
 ): Promise<Response> {
-  if (!isSyncTable(table)) {
+  if (!isSyncTableName(table)) {
     return json<SyncErrorBody>({ error: 'unknown_table' }, 404);
   }
 
@@ -51,19 +30,16 @@ export async function handlePush(
     return outdated;
   }
 
-  const keyHash = await authenticate(request, env, env.SYNC_RATE_LIMITER);
-  if (keyHash instanceof Response) {
-    return keyHash;
+  const caller = await authenticate(request, env, env.SYNC_RATE_LIMITER);
+  if (caller instanceof Response) {
+    return caller;
   }
 
-  const body = await parseJsonBody(
-    request,
-    pushBodyLimit,
-    pushSchema,
-    'bad_json',
-    400,
-    { requireContentLength: true },
-  );
+  const { keyHash } = caller;
+
+  const body = await parseJsonBody(request, SYNC_PUSH_MAX_BYTES, pushSchema, {
+    requireContentLength: true,
+  });
   if (body instanceof Response) {
     return body;
   }
@@ -74,7 +50,7 @@ export async function handlePush(
     return json<SyncErrorBody>({ error: 'items_required' }, 400);
   }
 
-  if (items.length > MAX_PUSH_ROWS) {
+  if (items.length > SYNC_PUSH_MAX_ROWS) {
     return json<SyncErrorBody>({ error: 'too_many_rows' }, 413);
   }
 
@@ -90,9 +66,8 @@ export async function handlePush(
   const repo = new SyncRepo(getDb(env));
   const merged = await repo.upsertRows(table, keyHash, rows);
 
-  const afterPush = afterPushFor(table);
-  if (afterPush) {
-    ctx.waitUntil(afterPush(repo, env, keyHash, rows));
+  if (table === 'catch_media' && env.MEDIA) {
+    ctx.waitUntil(collectOrphanedMedia(repo, env.MEDIA, keyHash, rows));
   }
 
   return json({

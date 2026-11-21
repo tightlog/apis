@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/cloudflare';
-import { workerSentryOptions } from '@tightlog/worker-utils';
+import { workerSentryOptions } from '@tightlog/worker-utils/worker/sentry';
 import { handler } from './handler';
 import type { Env } from './types';
 

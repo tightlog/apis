@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import type { SqlRow } from '../src/db';
+import type { SqlRow } from '@tightlog/worker-utils/services/libsql';
+import type { SyncTableName } from '../src/http';
+import { SYNC_TEXT_MAX } from '../src/http';
 import type { SanitizedRow } from '../src/tables';
 import {
   dataColumns,
-  isSyncTable,
   MAX_FUTURE_SKEW_MS,
   sanitizeRow,
   syncRowFromDb,
@@ -11,25 +12,17 @@ import {
 } from '../src/tables';
 import type { SyncRow } from '../src/types';
 
-describe('isSyncTable', () => {
-  test('accepts the synced tables and nothing else', () => {
-    expect(isSyncTable('catches')).toBe(true);
+type ColumnValues = Record<string, SanitizedRow['values'][number]>;
 
-    expect(isSyncTable('spots')).toBe(true);
-
-    expect(isSyncTable('sessions')).toBe(true);
-
-    expect(isSyncTable('catch_media')).toBe(true);
-
-    expect(isSyncTable('users')).toBe(false);
-
-    expect(isSyncTable('media_objects')).toBe(false);
-
-    expect(isSyncTable('devices')).toBe(false);
-
-    expect(isSyncTable('')).toBe(false);
-  });
-});
+function byColumn(
+  table: SyncTableName,
+  row: SanitizedRow | null,
+): ColumnValues {
+  const columns = dataColumns(table);
+  return Object.fromEntries(
+    (row?.values ?? []).map((value, i) => [columns[i] ?? `#${i}`, value]),
+  );
+}
 
 describe('sanitizeRow', () => {
   test('rejects rows without usable data', () => {
@@ -48,7 +41,7 @@ describe('sanitizeRow', () => {
     expect(sanitizeRow('catches', { id: 'a', updatedAt: NaN })).toBeNull();
   });
 
-  test('coerces a full catch row to DB values in column order', () => {
+  test('coerces a full catch row to DB column values', () => {
     const row = sanitizeRow('catches', {
       id: 'uuid-1',
       updatedAt: 1750000000000,
@@ -75,35 +68,36 @@ describe('sanitizeRow', () => {
       notes: 'margin bite',
       createdAt: '2026-07-01T10:05:00.000Z',
     });
-    expect(row).toEqual<SanitizedRow>({
-      id: 'uuid-1',
-      updatedAtMs: 1750000000000,
-      deletedAt: null,
-      values: [
-        'Carp',
-        9.5,
-        null,
-        '2026-07-01T10:00:00.000Z',
-        'spot-uuid',
-        null,
-        'feeder',
-        'cloudy',
-        18.2,
-        12,
-        1013,
-        53.4084,
-        -2.9916,
-        1,
-        1,
-        0,
-        'boilie',
-        'wafter',
-        '',
-        '',
-        'rig-uuid',
-        'margin bite',
-        '2026-07-01T10:05:00.000Z',
-      ],
+    expect({
+      id: row?.id,
+      updatedAtMs: row?.updatedAtMs,
+      deletedAt: row?.deletedAt,
+    }).toEqual({ id: 'uuid-1', updatedAtMs: 1750000000000, deletedAt: null });
+
+    expect(byColumn('catches', row)).toEqual<ColumnValues>({
+      species: 'Carp',
+      weight_kg: 9.5,
+      length_cm: null,
+      caught_at: '2026-07-01T10:00:00.000Z',
+      spot_id: 'spot-uuid',
+      session_id: null,
+      method: 'feeder',
+      weather: 'cloudy',
+      air_temp_c: 18.2,
+      wind_kph: 12,
+      pressure_hpa: 1013,
+      latitude: 53.4084,
+      longitude: -2.9916,
+      released: 1,
+      landed: 1,
+      pinned: 0,
+      bait: 'boilie',
+      hook_bait: 'wafter',
+      peg: '',
+      swim: '',
+      rig_uuid: 'rig-uuid',
+      notes: 'margin bite',
+      created_at: '2026-07-01T10:05:00.000Z',
     });
   });
 
@@ -126,17 +120,15 @@ describe('sanitizeRow', () => {
     expect(row!.updatedAtMs).toBe(1750000000000);
 
     expect(row!.deletedAt).toBeNull();
-    const columns = dataColumns('catches');
-    const value = (column: string) => row!.values[columns.indexOf(column)];
-    expect(value('species')).toBe('');
+    const values = byColumn('catches', row);
 
-    expect(value('weight_kg')).toBeNull();
-
-    expect(value('released')).toBe(0);
-
-    expect(value('landed')).toBe(1);
-
-    expect(value('pinned')).toBe(0);
+    expect([
+      values['species'],
+      values['weight_kg'],
+      values['released'],
+      values['landed'],
+      values['pinned'],
+    ]).toEqual(['', null, 0, 1, 0]);
   });
 
   test('keeps a deletedAt timestamp', () => {
@@ -153,12 +145,12 @@ describe('sanitizeRow', () => {
     const row = sanitizeRow('spots', {
       id: 'spot-1',
       updatedAt: 10,
-      deletedAt: 'x'.repeat(50_000),
-      name: 'y'.repeat(50_000),
+      deletedAt: 'x'.repeat(SYNC_TEXT_MAX + 1),
+      name: 'y'.repeat(SYNC_TEXT_MAX + 1),
     });
-    expect(row!.deletedAt).toHaveLength(10_000);
+    expect(row!.deletedAt).toHaveLength(SYNC_TEXT_MAX);
 
-    expect(row!.values[0]).toHaveLength(10_000);
+    expect(byColumn('spots', row)['name']).toHaveLength(SYNC_TEXT_MAX);
   });
 
   test('clamps a far-future updatedAt to the Worker clock (F1)', () => {
@@ -281,29 +273,24 @@ describe('syncRowFromDb', () => {
 });
 
 describe('catch_media rows', () => {
-  test('sanitizes a media row into positional column values', () => {
-    expect(
-      sanitizeRow('catch_media', {
-        id: 'media-uuid',
-        catchId: 'catch-uuid',
-        basename: 'a'.repeat(64) + '.jpg',
-        kind: 'photo',
-        position: 2,
-        createdAt: '2026-07-01T06:00:00.000Z',
-        updatedAt: 1000,
-        deletedAt: null,
-      }),
-    ).toEqual<SanitizedRow>({
+  test('sanitizes a media row into its column values', () => {
+    const row = sanitizeRow('catch_media', {
       id: 'media-uuid',
-      updatedAtMs: 1000,
+      catchId: 'catch-uuid',
+      basename: 'a'.repeat(64) + '.jpg',
+      kind: 'photo',
+      position: 2,
+      createdAt: '2026-07-01T06:00:00.000Z',
+      updatedAt: 1000,
       deletedAt: null,
-      values: [
-        'catch-uuid',
-        'a'.repeat(64) + '.jpg',
-        'photo',
-        2,
-        '2026-07-01T06:00:00.000Z',
-      ],
+    });
+
+    expect(byColumn('catch_media', row)).toEqual<ColumnValues>({
+      catch_id: 'catch-uuid',
+      basename: 'a'.repeat(64) + '.jpg',
+      kind: 'photo',
+      position: 2,
+      created_at: '2026-07-01T06:00:00.000Z',
     });
   });
 
@@ -313,7 +300,7 @@ describe('catch_media rows', () => {
       kind: 'audio',
       updatedAt: 1000,
     });
-    expect(row?.values[2]).toBe('photo');
+    expect(byColumn('catch_media', row)['kind']).toBe('photo');
   });
 
   test('clamps position into the six-item range the app allows', () => {
@@ -332,9 +319,9 @@ describe('catch_media rows', () => {
       position: 'first',
       updatedAt: 1,
     });
-    expect([over?.values[3], under?.values[3], bogus?.values[3]]).toEqual([
-      5, 0, 0,
-    ]);
+    expect(
+      [over, under, bogus].map(row => byColumn('catch_media', row)['position']),
+    ).toEqual([5, 0, 0]);
   });
 
   test('maps a stored row back to a sync row', () => {

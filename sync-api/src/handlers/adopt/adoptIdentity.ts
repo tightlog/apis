@@ -1,7 +1,7 @@
-import { json } from '@tightlog/worker-utils';
+import { json } from '@tightlog/worker-utils/request/json';
 import type { SyncRepo } from '../../repo';
 import type { SyncUser } from '../../types';
-import type { SyncErrorBody } from '@tightlog/protocol/sync';
+import type { SyncErrorBody } from '../../http';
 
 export async function adoptIdentity(
   repo: SyncRepo,

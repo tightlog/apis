@@ -1,20 +1,16 @@
+import * as Sentry from '@sentry/cloudflare';
 import { getDb } from './db';
 import {
   handleAttestChallenge,
   handleAttestRegister,
-} from '@tightlog/worker-utils/attest';
-import { tursoAttestStore } from '@tightlog/worker-utils/attest-turso';
-import * as Sentry from '@sentry/cloudflare';
-import { handleAdopt } from './handlers/adopt/handleAdopt';
+} from '@tightlog/worker-utils/attest/gate';
+import { tursoAttestStore } from '@tightlog/worker-utils/attest/turso';
 import { handleAdoptPurchase } from './handlers/adopt/handleAdoptPurchase';
 import { handleEscrowKey } from './handlers/escrow/handleEscrowKey';
 import { handleEscrowKeyDelete } from './handlers/escrow/handleEscrowKeyDelete';
-import {
-  json,
-  clientIp,
-  handleHealth,
-  rateLimited,
-} from '@tightlog/worker-utils';
+import { json } from '@tightlog/worker-utils/request/json';
+import { workerFetch } from '@tightlog/worker-utils/worker/fetch';
+import { pathPattern } from '@tightlog/worker-utils/request/path';
 import { handleIdentityProbe } from './handlers/identity/handleIdentityProbe';
 import { handleMediaGet } from './handlers/media/handleMediaGet';
 import { handleMediaPut } from './handlers/media/handleMediaPut';
@@ -24,27 +20,26 @@ import { handlePush } from './handlers/push/handlePush';
 import { handleRecoveryNoticesAck } from './handlers/recovery/handleRecoveryNoticesAck';
 import { handleRecoveryNoticesPull } from './handlers/recovery/handleRecoveryNoticesPull';
 import { handleRegister } from './handlers/register/handleRegister';
-import { SyncBoundaryOverflowError } from './repo';
+import { SyncRepo } from './repo';
+import { sweepUnreferencedMedia } from './scheduled/sweepUnreferencedMedia';
+import { MEDIA_SWEEP_CRON } from './cron';
 import type { Env } from './types';
-import { attestPaths } from '@tightlog/protocol/attest';
-import { syncPaths } from '@tightlog/protocol/sync';
-import type { SyncErrorBody } from '@tightlog/protocol/sync';
+import type { SyncErrorBody } from './http';
 
-const MEDIA_PATH = new RegExp(`^${syncPaths.media('([^/]+)')}$`);
-const TABLE_PATH = new RegExp(`^${syncPaths.table('([^/]+)')}$`);
+const MEDIA_PATH = pathPattern('/v1/sync/media/:basename');
+const TABLE_PATH = pathPattern('/v1/sync/:table');
 
 type Route = (request: Request, env: Env) => Response | Promise<Response>;
 
 const ROUTES = new Map<string, Route>([
-  [`POST ${syncPaths.register}`, handleRegister],
-  [`POST ${syncPaths.adopt}`, handleAdopt],
-  [`POST ${syncPaths.adoptPurchase}`, handleAdoptPurchase],
-  [`GET ${syncPaths.identity}`, handleIdentityProbe],
-  [`POST ${syncPaths.escrowKey}`, handleEscrowKey],
-  [`DELETE ${syncPaths.escrowKey}`, handleEscrowKeyDelete],
-  [`GET ${syncPaths.recoveryNotices}`, handleRecoveryNoticesPull],
-  [`POST ${syncPaths.recoveryNoticesAck}`, handleRecoveryNoticesAck],
-  [`POST ${syncPaths.mediaStatus}`, handleMediaStatus],
+  [`POST /v1/sync/register`, handleRegister],
+  [`POST /v1/sync/adopt-purchase`, handleAdoptPurchase],
+  [`GET /v1/sync/identity`, handleIdentityProbe],
+  [`POST /v1/sync/escrow-key`, handleEscrowKey],
+  [`DELETE /v1/sync/escrow-key`, handleEscrowKeyDelete],
+  [`GET /v1/sync/recovery-notices`, handleRecoveryNoticesPull],
+  [`POST /v1/sync/recovery-notices/ack`, handleRecoveryNoticesAck],
+  [`POST /v1/sync/media/status`, handleMediaStatus],
 ]);
 
 async function dispatch(
@@ -56,27 +51,12 @@ async function dispatch(
   const { pathname } = url;
   const { method } = request;
 
-  if (pathname === '/health') {
-    return handleHealth(env);
+  if (pathname === '/attest/challenge' && method === 'POST') {
+    return handleAttestChallenge(request, env, tursoAttestStore(getDb(env)));
   }
 
-  if (
-    (pathname === attestPaths.challenge || pathname === attestPaths.register) &&
-    method === 'POST'
-  ) {
-    const limited = await rateLimited(
-      env.ATTEST_RATE_LIMITER,
-      clientIp(request),
-    );
-
-    if (limited) {
-      return limited;
-    }
-
-    const store = tursoAttestStore(getDb(env));
-    return pathname === attestPaths.challenge
-      ? handleAttestChallenge(env, store)
-      : handleAttestRegister(request, env, store);
+  if (pathname === '/attest/register' && method === 'POST') {
+    return handleAttestRegister(request, env, tursoAttestStore(getDb(env)));
   }
 
   const route = ROUTES.get(`${method} ${pathname}`);
@@ -85,9 +65,7 @@ async function dispatch(
     return route(request, env);
   }
 
-  const mediaMatch = MEDIA_PATH.exec(pathname);
-
-  const mediaBasename = mediaMatch?.[1];
+  const mediaBasename = MEDIA_PATH.exec(pathname)?.[1];
   if (mediaBasename) {
     const basename = decodeURIComponent(mediaBasename);
 
@@ -100,9 +78,7 @@ async function dispatch(
     }
   }
 
-  const tableMatch = TABLE_PATH.exec(pathname);
-  const tableName = tableMatch?.[1];
-
+  const tableName = TABLE_PATH.exec(pathname)?.[1];
   if (tableName) {
     const table = decodeURIComponent(tableName);
 
@@ -119,21 +95,22 @@ async function dispatch(
 }
 
 export const handler = {
-  async fetch(
-    request: Request,
-    env: Env,
-    ctx: ExecutionContext,
-  ): Promise<Response> {
-    try {
-      return await dispatch(request, env, ctx);
-    } catch (error) {
-      console.error('unhandled sync error', error);
-      Sentry.captureException(error);
-      if (error instanceof SyncBoundaryOverflowError) {
-        return json({ error: error.message }, 503);
-      }
+  fetch: workerFetch(dispatch, { name: 'sync' }),
 
-      return json<SyncErrorBody>({ error: 'internal_error' }, 500);
-    }
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    await Sentry.withMonitor(
+      'sync-media-sweep',
+      () =>
+        sweepUnreferencedMedia(
+          new SyncRepo(getDb(env)),
+          env.MEDIA,
+          controller.scheduledTime,
+        ),
+      {
+        schedule: { type: 'crontab', value: MEDIA_SWEEP_CRON },
+        checkinMargin: 10,
+        maxRuntime: 15,
+      },
+    );
   },
 } satisfies ExportedHandler<Env>;

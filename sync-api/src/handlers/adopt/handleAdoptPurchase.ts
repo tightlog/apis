@@ -1,25 +1,32 @@
-import { attestRejection } from '@tightlog/worker-utils/attest';
-import { adoptPurchaseChallenge } from '@tightlog/protocol/sync';
-import { tursoAttestGate } from '@tightlog/worker-utils/attest-turso';
+import {
+  attestGate,
+  attestRejection,
+} from '@tightlog/worker-utils/attest/gate';
+import { adoptPurchaseChallenge } from '../../http';
+import { tursoAttestStore } from '@tightlog/worker-utils/attest/turso';
 import { getDb } from '../../db';
 import { SyncRepo } from '../../repo';
 import { revenueCatService } from '../../services/revenuecat-service';
 import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
-import { json, rateLimited, parseJsonBody } from '@tightlog/worker-utils';
+import { json } from '@tightlog/worker-utils/request/json';
+import { rateLimited } from '@tightlog/worker-utils/request/rate-limit';
+import { parseJsonBody } from '@tightlog/worker-utils/request/parse-body';
 import { adoptPurchaseSchema } from '../../validation/adopt';
-import { metaBodyLimit } from '../../validation/register';
+import { metaBodyLimit } from '../../constants/body-limits';
 import { adoptIdentity } from './adoptIdentity';
-import type { SyncErrorBody } from '@tightlog/protocol/sync';
+import type { SyncErrorBody } from '../../http';
 
 export async function handleAdoptPurchase(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  const keyHash = await authenticate(request, env, env.ADOPT_RATE_LIMITER);
-  if (keyHash instanceof Response) {
-    return keyHash;
+  const caller = await authenticate(request, env, env.ADOPT_RATE_LIMITER);
+  if (caller instanceof Response) {
+    return caller;
   }
+
+  const { keyHash } = caller;
 
   const body = await parseJsonBody(request, metaBodyLimit, adoptPurchaseSchema);
 
@@ -38,9 +45,9 @@ export async function handleAdoptPurchase(
   }
 
   const db = getDb(env);
-  const gate = await tursoAttestGate(
+  const gate = await attestGate(
     env,
-    db,
+    tursoAttestStore(db),
     request.headers,
     adoptPurchaseChallenge(appUserId, keyHash),
   );

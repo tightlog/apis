@@ -1,6 +1,6 @@
 import type { Client } from '@libsql/client';
 import { beforeEach, describe, expect, test } from 'vitest';
-import type { SyncDb } from '../src/db';
+import type { Db } from '@tightlog/worker-utils/services/libsql';
 import { SyncRepo } from '../src/repo';
 import { migratedDb } from './sqlite-db';
 
@@ -8,7 +8,7 @@ const OLD_KEY = 'a'.repeat(64);
 const NEW_KEY = 'b'.repeat(64);
 
 let client: Client;
-let db: SyncDb;
+let db: Db;
 let repo: SyncRepo;
 
 beforeEach(async () => {

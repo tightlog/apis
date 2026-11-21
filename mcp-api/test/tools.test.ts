@@ -1,7 +1,8 @@
+import { COACH_TOOL_NAMES } from '../src/http';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { environmentAgencyService } from '../src/services/environment-agency-service';
 import type { openMeteoService } from '../src/services/open-meteo-service';
-import type { solunar } from '../src/solunar';
+import { solunar } from '../src/solunar';
 import { connectClient, toolJson } from './__fixtures__/mcpClient.fixture';
 
 type OpenMeteo = typeof openMeteoService;
@@ -24,15 +25,7 @@ describe('tools', () => {
     const client = await connectClient();
     const { tools } = await client.listTools();
 
-    expect(tools.map(tool => tool.name)).toEqual([
-      'get_solunar',
-      'get_current_conditions',
-      'get_hourly_forecast',
-      'get_weather_forecast',
-      'get_tides',
-      'get_marine_conditions',
-      'get_river_level',
-    ]);
+    expect(tools.map(tool => tool.name)).toEqual([...COACH_TOOL_NAMES]);
   });
 
   test('get_solunar returns windows in the angler local time', async () => {
@@ -64,22 +57,42 @@ describe('tools', () => {
     });
   });
 
+  test('get_solunar gives the same day at any time of that local day', () => {
+    const early = solunar(
+      { utcOffsetMinutes: -300, days: 3 },
+      new Date('2026-11-03T05:10:00Z'),
+    );
+    const late = solunar(
+      { utcOffsetMinutes: -300, days: 3 },
+      new Date('2026-11-04T04:50:00Z'),
+    );
+    expect(late).toEqual(early);
+
+    expect(early.today.date).toBe('2026-11-03');
+  });
+
   test('get_weather_forecast summarises the Open-Meteo reply', async () => {
     const fetchMock = stubFetch({
       daily: {
-        time: ['2026-11-02'],
-        weather_code: [61],
-        temperature_2m_max: [12.4],
-        temperature_2m_min: [6.1],
-        wind_speed_10m_max: [18],
-        wind_direction_10m_dominant: [225],
-        precipitation_probability_max: [70],
-        sunrise: ['2026-11-02T07:01'],
-        sunset: ['2026-11-02T16:32'],
+        time: ['2026-11-01', '2026-11-02'],
+        weather_code: [3, 61],
+        temperature_2m_max: [13, 12.4],
+        temperature_2m_min: [7, 6.1],
+        wind_speed_10m_max: [10, 18],
+        wind_direction_10m_dominant: [200, 225],
+        precipitation_probability_max: [10, 70],
+        sunrise: ['2026-11-01T06:59', '2026-11-02T07:01'],
+        sunset: ['2026-11-01T16:34', '2026-11-02T16:32'],
       },
       hourly: {
-        time: ['2026-11-02T00:00', '2026-11-02T12:00', '2026-11-02T23:00'],
-        surface_pressure: [1012, 1009, 1006],
+        time: [
+          '2026-11-01T00:00',
+          '2026-11-01T12:00',
+          '2026-11-02T00:00',
+          '2026-11-02T12:00',
+          '2026-11-02T23:00',
+        ],
+        surface_pressure: [1014, 1012, 1012, 1009, 1006],
       },
     });
     const client = await connectClient();
@@ -91,9 +104,11 @@ describe('tools', () => {
       }),
     );
 
-    expect(fetchMock.mock.calls[0]?.[0]).toContain(
-      'latitude=51.51&longitude=-0.13',
-    );
+    expect(
+      ['latitude=51.51&longitude=-0.13', 'past_days=1'].filter(
+        part => !fetchMock.mock.calls[0]?.[0].includes(part),
+      ),
+    ).toEqual([]);
 
     expect(result).toEqual({
       available: true,
@@ -119,8 +134,14 @@ describe('tools', () => {
   test('get_tides finds the turns of the tide', async () => {
     stubFetch({
       hourly: {
-        time: ['T0', 'T1', 'T2', 'T3', 'T4'],
-        sea_level_height_msl: [0.2, 1.4, 0.9, -1.1, -0.4],
+        time: [
+          '2026-11-02T00:00',
+          '2026-11-02T01:00',
+          '2026-11-02T02:00',
+          '2026-11-02T03:00',
+          '2026-11-02T04:00',
+        ],
+        sea_level_height_msl: [0.2, 1.4, 1.4, -1.1, -1.1],
       },
     });
     const client = await connectClient();
@@ -135,11 +156,7 @@ describe('tools', () => {
     expect(result).toEqual({
       available: true,
       timesAre: 'local time at the angler',
-      note: 'Hourly model data, so each turn is accurate to about an hour.',
-      turns: [
-        { time: 'T1', kind: 'high', heightM: 1.4 },
-        { time: 'T3', kind: 'low', heightM: -1.1 },
-      ],
+      turns: [{ time: '2026-11-02T01:30', kind: 'high', heightM: 1.71 }],
     });
   });
 
@@ -167,7 +184,7 @@ describe('tools', () => {
         precipitation: 0.2,
         weather_code: 3,
         cloud_cover: 80,
-        pressure_msl: 1008.4,
+        surface_pressure: 1008.4,
         wind_speed_10m: 14,
         wind_direction_10m: 240,
         wind_gusts_10m: 31,
@@ -189,7 +206,7 @@ describe('tools', () => {
       units: { temperature: '°C', wind: 'km/h', pressure: 'hPa', rain: 'mm' },
       time: '2026-11-02T14:00',
       daylight: true,
-      weather: 'partly cloudy',
+      weather: 'overcast',
       temperature: 11.2,
       feelsLike: 9.8,
       rainLastHour: 0.2,

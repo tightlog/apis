@@ -1,4 +1,4 @@
-import { coachContextInput } from '@tightlog/protocol/coach';
+import { coachContextInput } from '../http';
 import { z } from 'zod';
 
 export const coordinatesInput = {
@@ -26,3 +26,13 @@ export const hourlyForecastInput = {
     .default(0)
     .describe('0 is today, 1 is tomorrow.'),
 };
+
+export type Coordinates = z.infer<z.ZodObject<typeof coordinatesInput>>;
+
+export type DailyForecastInput = z.infer<
+  z.ZodObject<typeof dailyForecastInput>
+>;
+
+export type HourlyForecastInput = z.infer<
+  z.ZodObject<typeof hourlyForecastInput>
+>;

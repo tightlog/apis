@@ -1,7 +1,6 @@
-import type { RateLimit } from '@tightlog/worker-utils';
-export type { RateLimit };
+import type { AttestEnv } from '@tightlog/worker-utils/attest/gate';
 
-export interface Env {
+export interface Env extends AttestEnv {
   TURSO_DATABASE_URL: string;
   TURSO_AUTH_TOKEN?: string;
   SYNC_RATE_LIMITER?: RateLimit;
@@ -19,9 +18,6 @@ export interface Env {
   APPLE_TEAM_ID?: string;
   APP_ATTEST_BUNDLE_IDS?: string;
   APP_ATTEST_ENV?: string;
-  PLAY_PACKAGE_NAMES?: string;
-  PLAY_CERT_SHA256?: string;
-  PLAY_INTEGRITY_SERVICE_ACCOUNT?: string;
   SENTRY_DSN?: string;
   SENTRY_ENVIRONMENT: string;
   SENTRY_TRACES_SAMPLE_RATE?: string;
@@ -44,7 +40,10 @@ export interface SyncUser {
   keyEscrow: string | null;
 }
 
-export type SyncRow = { id: string; updatedAt: number } & Record<
+export interface SyncRow extends Record<
   string,
   string | number | boolean | null
->;
+> {
+  id: string;
+  updatedAt: number;
+}

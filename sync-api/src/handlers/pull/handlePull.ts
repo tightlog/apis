@@ -1,12 +1,12 @@
-import { json } from '@tightlog/worker-utils';
-import { SYNC_SINCE_PARAM } from '@tightlog/protocol/sync';
+import { json } from '@tightlog/worker-utils/request/json';
+import { SYNC_SINCE_PARAM, isSyncTableName } from '../../http';
 import { getDb } from '../../db';
 import { SyncRepo } from '../../repo';
 import { schemaVersionError } from '../../schema';
-import { isSyncTable, syncRowFromDb } from '../../tables';
+import { syncRowFromDb } from '../../tables';
 import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
-import type { SyncErrorBody } from '@tightlog/protocol/sync';
+import type { SyncErrorBody } from '../../http';
 
 export async function handlePull(
   request: Request,
@@ -14,7 +14,7 @@ export async function handlePull(
   table: string,
   url: URL,
 ): Promise<Response> {
-  if (!isSyncTable(table)) {
+  if (!isSyncTableName(table)) {
     return json<SyncErrorBody>({ error: 'unknown_table' }, 404);
   }
 
@@ -23,10 +23,12 @@ export async function handlePull(
     return outdated;
   }
 
-  const keyHash = await authenticate(request, env, env.SYNC_RATE_LIMITER);
-  if (keyHash instanceof Response) {
-    return keyHash;
+  const caller = await authenticate(request, env, env.SYNC_RATE_LIMITER);
+  if (caller instanceof Response) {
+    return caller;
   }
+
+  const { keyHash } = caller;
 
   const since = Number(url.searchParams.get(SYNC_SINCE_PARAM) ?? 0);
   const sinceMs = Number.isFinite(since) && since > 0 ? Math.trunc(since) : 0;

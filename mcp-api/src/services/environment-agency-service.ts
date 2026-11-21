@@ -1,6 +1,10 @@
-import type { Coordinates } from '../types';
+import {
+  RIVER_GAUGE_SEARCH_KM,
+  RIVER_READING_COUNT,
+  riverTrend,
+} from '../http';
 import { getJson } from '../utils/getJson';
-import { roundCoordinate } from '../utils/roundCoordinate';
+import type { Coordinates } from '../validation/tools';
 
 interface EaStation {
   label?: string;
@@ -14,10 +18,6 @@ interface EaReading {
   dateTime?: string;
   value?: number;
 }
-
-const SEARCH_KM = 12;
-const READING_COUNT = 12;
-const STEADY_M = 0.01;
 
 async function getEa<T>(url: string): Promise<T[]> {
   const body = await getJson<{ items?: T[] }>(url);
@@ -36,8 +36,8 @@ export const environmentAgencyService = {
   riverLevel: async (input: Coordinates) => {
     const stations = await getEa<EaStation>(
       'https://environment.data.gov.uk/flood-monitoring/id/stations' +
-        `?parameter=level&lat=${roundCoordinate(input.latitude)}` +
-        `&long=${roundCoordinate(input.longitude)}&dist=${SEARCH_KM}`,
+        `?parameter=level&lat=${input.latitude}` +
+        `&long=${input.longitude}&dist=${RIVER_GAUGE_SEARCH_KM}`,
     );
     const nearest = stations
       .filter(station => station.lat != null && station.long != null)
@@ -47,14 +47,13 @@ export const environmentAgencyService = {
     if (!nearest || !measure?.['@id']) {
       return {
         available: false,
-        reason:
-          'no river gauge within 12 km (Environment Agency covers England only)',
+        reason: `no river gauge within ${RIVER_GAUGE_SEARCH_KM} km (Environment Agency covers England only)`,
       };
     }
 
     const readings = (
       await getEa<EaReading>(
-        `${measure['@id']}/readings?_sorted&_limit=${READING_COUNT}`,
+        `${measure['@id']}/readings?_sorted&_limit=${RIVER_READING_COUNT}`,
       )
     ).filter(reading => reading.value != null && reading.dateTime != null);
     const latest = readings[0];
@@ -71,12 +70,7 @@ export const environmentAgencyService = {
       river: nearest.riverName ?? null,
       levelM: latest.value,
       readAt: latest.dateTime,
-      trend:
-        Math.abs(change) < STEADY_M
-          ? 'steady'
-          : change > 0
-            ? 'rising'
-            : 'falling',
+      trend: riverTrend(oldest.value, latest.value),
       changeM: Math.round(change * 100) / 100,
       since: oldest.dateTime,
     };

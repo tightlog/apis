@@ -32,7 +32,6 @@ this repo, and all are private:
 | `tail-notify`          | Forwards Worker exceptions to chat.               |
 | `metrics-exporter`     | Pushes Worker analytics to Grafana Cloud.         |
 | `marketing-website`    | The public site, tightlog.com.                    |
-| `sanity-studio`        | The self-hosted CMS at cms.tightlog.com.          |
 | `mail-dashboard`       | Operator inbox for support mail.                  |
 | `moderation-dashboard` | Operator queue for feed reports and takedowns.    |
 | `admin-dashboard`      | Internal admin dashboard.                         |

@@ -48,7 +48,7 @@ The on-device Apple model uses the same tools through
 - `{ context, call: { name, arguments } }` runs one tool and returns
   `{ result }`.
 
-`src/app/src/lib/coachTools.ts` turns the declarations into AI SDK tools.
+`src/app/src/services/coach/coach-tools.ts` turns the declarations into AI SDK tools.
 The route checks the attestation and then refunds the quota, because it calls
 no paid model.
 

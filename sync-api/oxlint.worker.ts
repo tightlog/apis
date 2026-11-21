@@ -1,6 +1,11 @@
 import nkzw from '@nkzw/oxlint-config';
 import { defineConfig } from 'oxlint';
-import { sharedRules, stylePlugin } from './oxlint.shared.ts';
+import {
+  noConsole,
+  sharedRules,
+  stylePlugin,
+  typescriptFilesOverride,
+} from './oxlint.shared.ts';
 import type { LocalOxlintConfig } from './oxlint.types.ts';
 
 const local = {
@@ -18,7 +23,6 @@ const local = {
     worker: true,
   },
   rules: {
-    'style/blank-line-after-block': 'error',
     eqeqeq: [
       'error',
       'always',
@@ -26,12 +30,7 @@ const local = {
         null: 'ignore',
       },
     ],
-    'no-console': [
-      'error',
-      {
-        allow: ['warn', 'error'],
-      },
-    ],
+    'no-console': noConsole,
     'require-await': 'off',
     'no-unused-vars': [
       'error',
@@ -107,36 +106,13 @@ const local = {
     'typescript/prefer-readonly-parameter-types': 'off',
     'typescript/strict-boolean-expressions': 'off',
     'typescript/strict-void-return': 'off',
-    'unicorn/consistent-function-scoping': 'off',
     'unicorn/filename-case': 'off',
     'unicorn/no-array-callback-reference': 'off',
     'unicorn/no-null': 'off',
     'unicorn/prefer-code-point': 'off',
-    'unicorn/prefer-top-level-await': 'off',
-    'unicorn/catch-error-name': 'off',
   },
   overrides: [
-    {
-      files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
-      rules: {
-        'constructor-super': 'off',
-        'getter-return': 'off',
-        'no-class-assign': 'off',
-        'no-const-assign': 'off',
-        'no-dupe-class-members': 'off',
-        'no-dupe-keys': 'off',
-        'no-func-assign': 'off',
-        'no-import-assign': 'off',
-        'no-new-native-nonconstructor': 'off',
-        'no-obj-calls': 'off',
-        'no-redeclare': 'off',
-        'no-setter-return': 'off',
-        'no-this-before-super': 'off',
-        'no-unreachable': 'off',
-        'no-unsafe-negation': 'off',
-        'no-with': 'off',
-      },
-    },
+    typescriptFilesOverride,
     {
       files: [
         '**/test/**',

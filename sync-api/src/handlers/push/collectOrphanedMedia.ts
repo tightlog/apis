@@ -1,4 +1,4 @@
-import { bestEffort } from '@tightlog/worker-utils';
+import { bestEffort } from '@tightlog/worker-utils/worker/best-effort';
 import { mediaKey } from '../../media';
 import type { SyncRepo } from '../../repo';
 import { mediaBasenameOf } from '../../tables';

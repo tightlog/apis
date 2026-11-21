@@ -1,13 +1,13 @@
 import type { Client } from '@libsql/client';
 import { beforeEach, describe, expect, test } from 'vitest';
-import type { SyncDb } from '../src/db';
+import type { Db } from '@tightlog/worker-utils/services/libsql';
 import { SyncRepo } from '../src/repo';
 import { migratedDb } from './sqlite-db';
 
 const RC = '$RCAnonymousID:8f3c2b1a4d5e6f708192a3b4c5d6e7f8';
 
 let client: Client;
-let db: SyncDb;
+let db: Db;
 let repo: SyncRepo;
 
 beforeEach(async () => {

@@ -1,8 +1,15 @@
-import { tideTurns } from '../tides';
-import type { Coordinates } from '../types';
+import {
+  dayPressures,
+  findTideExtremes,
+  tidePointsOf,
+  wmoGroup,
+} from '../http';
 import { getJson } from '../utils/getJson';
-import { roundCoordinate } from '../utils/roundCoordinate';
-import { describeWeather, pressureTrend } from '../weather';
+import type {
+  Coordinates,
+  DailyForecastInput,
+  HourlyForecastInput,
+} from '../validation/tools';
 
 interface OpenMeteoCurrent {
   current?: {
@@ -13,7 +20,7 @@ interface OpenMeteoCurrent {
     precipitation?: number;
     weather_code?: number;
     cloud_cover?: number;
-    pressure_msl?: number;
+    surface_pressure?: number;
     wind_speed_10m?: number;
     wind_direction_10m?: number;
     wind_gusts_10m?: number;
@@ -27,7 +34,7 @@ interface OpenMeteoHourly {
     temperature_2m?: number[];
     precipitation_probability?: number[];
     cloud_cover?: number[];
-    pressure_msl?: number[];
+    surface_pressure?: number[];
     wind_speed_10m?: number[];
     wind_direction_10m?: number[];
     wind_gusts_10m?: number[];
@@ -66,18 +73,48 @@ interface OpenMeteoMarineNow {
 }
 
 const HOURS_PER_DAY = 24;
+
 const TIDE_FORECAST_HOURS = 48;
+
+const OPEN_METEO_APIS = {
+  forecast: 'https://api.open-meteo.com/v1/forecast',
+  marine: 'https://marine-api.open-meteo.com/v1/marine',
+};
+
+function openMeteoUrl(
+  api: keyof typeof OPEN_METEO_APIS,
+  { latitude, longitude }: Coordinates,
+  params: Record<string, string | number | readonly string[]>,
+): string {
+  const query = Object.entries({
+    latitude,
+    longitude,
+    ...params,
+    timezone: 'auto',
+  })
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join('&');
+  return `${OPEN_METEO_APIS[api]}?${query}`;
+}
 
 export const openMeteoService = {
   currentConditions: async (input: Coordinates) => {
     const body = await getJson<OpenMeteoCurrent>(
-      'https://api.open-meteo.com/v1/forecast' +
-        `?latitude=${roundCoordinate(input.latitude)}` +
-        `&longitude=${roundCoordinate(input.longitude)}` +
-        '&current=is_day,temperature_2m,apparent_temperature,precipitation,' +
-        'weather_code,cloud_cover,pressure_msl,wind_speed_10m,' +
-        'wind_direction_10m,wind_gusts_10m' +
-        '&timezone=auto&wind_speed_unit=kmh',
+      openMeteoUrl('forecast', input, {
+        current: [
+          'is_day',
+          'temperature_2m',
+          'apparent_temperature',
+          'precipitation',
+          'weather_code',
+          'cloud_cover',
+          'surface_pressure',
+          'wind_speed_10m',
+          'wind_direction_10m',
+          'wind_gusts_10m',
+        ],
+        wind_speed_unit: 'kmh',
+      }),
     );
     const now = body?.current;
     if (!now?.time) {
@@ -89,27 +126,34 @@ export const openMeteoService = {
       units: { temperature: '°C', wind: 'km/h', pressure: 'hPa', rain: 'mm' },
       time: now.time,
       daylight: now.is_day === 1,
-      weather: describeWeather(now.weather_code),
+      weather: wmoGroup(now.weather_code),
       temperature: now.temperature_2m ?? null,
       feelsLike: now.apparent_temperature ?? null,
       rainLastHour: now.precipitation ?? null,
       cloudCoverPercent: now.cloud_cover ?? null,
-      pressure: now.pressure_msl ?? null,
+      pressure: now.surface_pressure ?? null,
       wind: now.wind_speed_10m ?? null,
       gusts: now.wind_gusts_10m ?? null,
       windFromDegrees: now.wind_direction_10m ?? null,
     };
   },
 
-  hourlyForecast: async (input: Coordinates & { dayOffset: number }) => {
+  hourlyForecast: async (input: HourlyForecastInput) => {
     const body = await getJson<OpenMeteoHourly>(
-      'https://api.open-meteo.com/v1/forecast' +
-        `?latitude=${roundCoordinate(input.latitude)}` +
-        `&longitude=${roundCoordinate(input.longitude)}` +
-        '&hourly=weather_code,temperature_2m,precipitation_probability,' +
-        'cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,' +
-        'wind_gusts_10m' +
-        `&forecast_days=${input.dayOffset + 1}&timezone=auto&wind_speed_unit=kmh`,
+      openMeteoUrl('forecast', input, {
+        hourly: [
+          'weather_code',
+          'temperature_2m',
+          'precipitation_probability',
+          'cloud_cover',
+          'surface_pressure',
+          'wind_speed_10m',
+          'wind_direction_10m',
+          'wind_gusts_10m',
+        ],
+        forecast_days: input.dayOffset + 1,
+        wind_speed_unit: 'kmh',
+      }),
     );
     const hourly = body?.hourly;
     const from = input.dayOffset * HOURS_PER_DAY;
@@ -126,11 +170,11 @@ export const openMeteoService = {
         const at = from + index;
         return {
           time,
-          weather: describeWeather(hourly?.weather_code?.[at]),
+          weather: wmoGroup(hourly?.weather_code?.[at]),
           temperature: hourly?.temperature_2m?.[at] ?? null,
           rainChancePercent: hourly?.precipitation_probability?.[at] ?? null,
           cloudCoverPercent: hourly?.cloud_cover?.[at] ?? null,
-          pressure: hourly?.pressure_msl?.[at] ?? null,
+          pressure: hourly?.surface_pressure?.[at] ?? null,
           wind: hourly?.wind_speed_10m?.[at] ?? null,
           gusts: hourly?.wind_gusts_10m?.[at] ?? null,
           windFromDegrees: hourly?.wind_direction_10m?.[at] ?? null,
@@ -139,48 +183,62 @@ export const openMeteoService = {
     };
   },
 
-  dailyForecast: async (input: Coordinates & { days: number }) => {
+  dailyForecast: async (input: DailyForecastInput) => {
     const body = await getJson<OpenMeteoForecast>(
-      'https://api.open-meteo.com/v1/forecast' +
-        `?latitude=${roundCoordinate(input.latitude)}` +
-        `&longitude=${roundCoordinate(input.longitude)}` +
-        '&daily=weather_code,temperature_2m_max,temperature_2m_min,' +
-        'wind_speed_10m_max,wind_direction_10m_dominant,' +
-        'precipitation_probability_max,sunrise,sunset' +
-        '&hourly=surface_pressure' +
-        `&forecast_days=${input.days}&timezone=auto&wind_speed_unit=kmh`,
+      openMeteoUrl('forecast', input, {
+        daily: [
+          'weather_code',
+          'temperature_2m_max',
+          'temperature_2m_min',
+          'wind_speed_10m_max',
+          'wind_direction_10m_dominant',
+          'precipitation_probability_max',
+          'sunrise',
+          'sunset',
+        ],
+        hourly: 'surface_pressure',
+        past_days: 1,
+        forecast_days: input.days,
+        wind_speed_unit: 'kmh',
+      }),
     );
     const daily = body?.daily;
-    if (!daily?.time?.length) {
+    const dates = daily?.time ?? [];
+    if (!daily || dates.length < 2) {
       return { available: false };
     }
+
+    const pressures = dayPressures(dates, body?.hourly);
 
     return {
       available: true,
       timesAre: 'local time at the angler',
       units: { temperature: '°C', wind: 'km/h', pressure: 'hPa' },
-      days: daily.time.map((date, index) => ({
-        date,
-        weather: describeWeather(daily.weather_code?.[index]),
-        temperatureMin: daily.temperature_2m_min?.[index] ?? null,
-        temperatureMax: daily.temperature_2m_max?.[index] ?? null,
-        windMax: daily.wind_speed_10m_max?.[index] ?? null,
-        windFromDegrees: daily.wind_direction_10m_dominant?.[index] ?? null,
-        rainChancePercent: daily.precipitation_probability_max?.[index] ?? null,
-        sunrise: daily.sunrise?.[index] ?? null,
-        sunset: daily.sunset?.[index] ?? null,
-        pressure: pressureTrend(body?.hourly, date),
-      })),
+      days: dates
+        .map((date, index) => ({
+          date,
+          weather: wmoGroup(daily.weather_code?.[index]),
+          temperatureMin: daily.temperature_2m_min?.[index] ?? null,
+          temperatureMax: daily.temperature_2m_max?.[index] ?? null,
+          windMax: daily.wind_speed_10m_max?.[index] ?? null,
+          windFromDegrees: daily.wind_direction_10m_dominant?.[index] ?? null,
+          rainChancePercent:
+            daily.precipitation_probability_max?.[index] ?? null,
+          sunrise: daily.sunrise?.[index] ?? null,
+          sunset: daily.sunset?.[index] ?? null,
+          pressure: pressures[index] ?? null,
+        }))
+        .slice(1),
     };
   },
 
   tides: async (input: Coordinates) => {
     const body = await getJson<OpenMeteoMarine>(
-      'https://marine-api.open-meteo.com/v1/marine' +
-        `?latitude=${roundCoordinate(input.latitude)}` +
-        `&longitude=${roundCoordinate(input.longitude)}` +
-        '&hourly=sea_level_height_msl&cell_selection=sea' +
-        `&forecast_hours=${TIDE_FORECAST_HOURS}&timezone=auto`,
+      openMeteoUrl('marine', input, {
+        hourly: 'sea_level_height_msl',
+        cell_selection: 'sea',
+        forecast_hours: TIDE_FORECAST_HOURS,
+      }),
     );
     const times = body?.hourly?.time ?? [];
     const heights = body?.hourly?.sea_level_height_msl ?? [];
@@ -188,22 +246,38 @@ export const openMeteoService = {
       return { available: false, reason: 'no sea nearby' };
     }
 
+    // Open-Meteo gives local times with no offset. Read them as UTC so the
+    // turns keep the local wall clock whatever zone the runtime is in.
+    const points = tidePointsOf(
+      times.map(time => `${time}Z`),
+      heights,
+    );
+
     return {
       available: true,
       timesAre: 'local time at the angler',
-      note: 'Hourly model data, so each turn is accurate to about an hour.',
-      turns: tideTurns(times, heights),
+      turns: findTideExtremes(points).map(({ time, kind, heightM }) => ({
+        time: time.slice(0, 16),
+        kind,
+        heightM,
+      })),
     };
   },
 
   marineConditions: async (input: Coordinates) => {
     const body = await getJson<OpenMeteoMarineNow>(
-      'https://marine-api.open-meteo.com/v1/marine' +
-        `?latitude=${roundCoordinate(input.latitude)}` +
-        `&longitude=${roundCoordinate(input.longitude)}` +
-        '&current=wave_height,wave_period,wave_direction,swell_wave_height,' +
-        'sea_surface_temperature' +
-        '&hourly=wave_height&forecast_hours=24&cell_selection=sea&timezone=auto',
+      openMeteoUrl('marine', input, {
+        current: [
+          'wave_height',
+          'wave_period',
+          'wave_direction',
+          'swell_wave_height',
+          'sea_surface_temperature',
+        ],
+        hourly: 'wave_height',
+        forecast_hours: HOURS_PER_DAY,
+        cell_selection: 'sea',
+      }),
     );
     const now = body?.current;
     if (now?.wave_height == null && now?.sea_surface_temperature == null) {

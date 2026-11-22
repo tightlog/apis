@@ -29,6 +29,7 @@ export interface SanitizedRow {
   updatedAtMs: number;
   deletedAt: string | null;
   values: DbValue[];
+  sent: boolean[];
 }
 
 function clip(value: string): string {
@@ -202,6 +203,7 @@ export function sanitizeRow(
     updatedAtMs,
     deletedAt: typeof deletedAtValue === 'string' ? clip(deletedAtValue) : null,
     values: fields(table).map(([name, field]) => field.toDb(row[name])),
+    sent: fields(table).map(([name]) => Object.hasOwn(row, name)),
   };
 }
 

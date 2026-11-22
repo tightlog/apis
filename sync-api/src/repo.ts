@@ -619,12 +619,18 @@ export class SyncRepo {
 
     const userId = await this.ensureUserId(keyHash);
     const columns = dataColumns(table);
-    const placeholders = ['?', '?', ...columns.map(() => '?'), '?', '?'].join(
-      ', ',
-    );
+    const columnCount = columns.length;
+    const placeholders = Array.from(
+      { length: columnCount + 4 },
+      (_, i) => `?${i + 1}`,
+    ).join(', ');
+    const sentFrom = columnCount + 5;
 
     const updates = columns
-      .map(column => `${column} = excluded.${column}`)
+      .map(
+        (column, i) =>
+          `${column} = CASE WHEN ?${sentFrom + i} THEN excluded.${column} ELSE ${table}.${column} END`,
+      )
       .join(', ');
 
     const sql = `
@@ -649,6 +655,7 @@ export class SyncRepo {
           ...row.values,
           row.updatedAtMs,
           row.deletedAt,
+          ...row.sent.map(sent => (sent ? 1 : 0)),
         ),
       );
 

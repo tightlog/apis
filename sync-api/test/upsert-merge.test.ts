@@ -98,6 +98,43 @@ describe('the merge rule', () => {
   });
 });
 
+describe('a push from an older app', () => {
+  test('keeps the fields a newer app saved that the older app does not send', async () => {
+    await repo.upsertRows('catches', KEY, [
+      catchRow('c1', 1000, { peg: '14', swim: 'Lily bed', rigId: 'rig-1' }),
+    ]);
+
+    const merged = await repo.upsertRows('catches', KEY, [
+      catchRow('c1', 2000, { species: 'Bream' }),
+    ]);
+    const stored = syncRowFromDb('catches', merged[0] ?? {});
+
+    expect({
+      species: stored['species'],
+      peg: stored['peg'],
+      swim: stored['swim'],
+      rigId: stored['rigId'],
+    }).toEqual({
+      species: 'Bream',
+      peg: '14',
+      swim: 'Lily bed',
+      rigId: 'rig-1',
+    });
+  });
+
+  test('a field the newer app sends empty still clears it', async () => {
+    await repo.upsertRows('catches', KEY, [
+      catchRow('c1', 1000, { peg: '14' }),
+    ]);
+
+    const merged = await repo.upsertRows('catches', KEY, [
+      catchRow('c1', 2000, { peg: '' }),
+    ]);
+
+    expect(syncRowFromDb('catches', merged[0] ?? {})['peg']).toEqual('');
+  });
+});
+
 describe('replaying a push', () => {
   test('the same batch sent twice leaves one row', async () => {
     const rows = [catchRow('c1', 1000), catchRow('c2', 1000)];

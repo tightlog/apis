@@ -28,7 +28,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260801.1",
     "@types/node": "25.9.2",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vitest": "4.1.10",
     "wrangler": "4.165.0",
     "@nkzw/oxlint-config": "2.0.1",

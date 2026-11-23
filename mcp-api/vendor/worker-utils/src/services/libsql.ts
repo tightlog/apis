@@ -1,5 +1,7 @@
 import { createClient } from '@libsql/client/web';
 import type { Client, InValue, ResultSet, Value } from '@libsql/client/web';
+import { RETRY, retry } from '../worker/retry';
+import { z } from 'zod';
 
 export type SqlRow = Record<string, Value>;
 
@@ -44,6 +46,53 @@ function plainRows({ columns, rows }: ResultSet): SqlRow[] {
   });
 }
 
+/**
+ * Turso is behind Cloudflare. On a 522 the edge did not connect, so no
+ * statement ran. The other statuses can arrive after a write committed.
+ */
+const NOT_DELIVERED_STATUSES = new Set([522]);
+const READ_RETRY_STATUSES = new Set([502, 503, 504, 520, 522, 524]);
+const ATTEMPTS = 3;
+const BASE_DELAY_MS = 200;
+
+const edgeFailure = z.object({
+  cause: z.object({ status: z.number() }),
+});
+
+function isRead(sql: string): boolean {
+  return /^\s*SELECT\b/i.test(sql);
+}
+
+async function withTransientRetry<T>(
+  read: boolean,
+  run: () => Promise<T>,
+): Promise<T> {
+  const retryable = read ? READ_RETRY_STATUSES : NOT_DELIVERED_STATUSES;
+  let lastError: unknown;
+  const result = await retry(
+    ATTEMPTS,
+    async () => {
+      try {
+        return { value: await run() };
+      } catch (error) {
+        const failure = edgeFailure.safeParse(error);
+        if (!failure.success || !retryable.has(failure.data.cause.status)) {
+          throw error;
+        }
+
+        lastError = error;
+        return RETRY;
+      }
+    },
+    BASE_DELAY_MS,
+  );
+  if (result === RETRY) {
+    throw lastError;
+  }
+
+  return result.value;
+}
+
 class LibsqlStatement implements Statement {
   private readonly client: Client;
   readonly sql: string;
@@ -60,7 +109,9 @@ class LibsqlStatement implements Statement {
   }
 
   private execute(): Promise<ResultSet> {
-    return this.client.execute({ sql: this.sql, args: this.args });
+    return withTransientRetry(isRead(this.sql), () =>
+      this.client.execute({ sql: this.sql, args: this.args }),
+    );
   }
 
   async first<T = SqlRow>(): Promise<T | null> {
@@ -93,9 +144,11 @@ class LibsqlDb implements Db {
   async batch<T = SqlRow>(
     statements: Statement[],
   ): Promise<{ results: T[]; meta: { changes: number } }[]> {
-    const results = await this.client.batch(
-      statements.map(({ sql, args }) => ({ sql, args })),
-      'write',
+    const results = await withTransientRetry(false, () =>
+      this.client.batch(
+        statements.map(({ sql, args }) => ({ sql, args })),
+        'write',
+      ),
     );
     return results.map(res => ({
       // SAFETY: the caller names the column shape of the statements it prepared.

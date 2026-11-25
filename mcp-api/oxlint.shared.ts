@@ -84,6 +84,7 @@ export const appForeignShapeFiles = [
   'src/components/generation/GenerationResultImage.tsx',
   'src/components/generation/InputControls.tsx',
   'src/widgets/BiteWindow.ios.tsx',
+  'src/widgets/SessionActivity.ios.tsx',
   'src/lib/expoMediaLibraryWebStub.js',
   'src/lib/purchasesWebStub.js',
 ];

@@ -5,6 +5,7 @@ import { decode as cborDecode } from 'cbor-x';
 import { z } from 'zod';
 import { AttestError } from './attest-error';
 import type { Bytes } from './types/bytes';
+import { aaguidAllowed } from './util/aaguidAllowed';
 import { base64ToBytes } from './util/base64ToBytes';
 import { bytesToBase64 } from './util/bytesToBase64';
 import { derSignatureToRaw } from './util/derSignatureToRaw';
@@ -17,12 +18,6 @@ import { verifyCertChain } from './util/verifyCertChain';
 export { AttestError } from './attest-error';
 
 const encoder = new TextEncoder();
-
-const AAGUID_PROD = new Uint8Array([
-  0x61, 0x70, 0x70, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0, 0, 0, 0, 0, 0, 0,
-]);
-
-const AAGUID_DEV = encoder.encode('appattestdevelop');
 
 export type AppAttestEnv = 'production' | 'development';
 
@@ -113,9 +108,7 @@ export async function verifyAttestation(
     throw new AttestError('attestation counter must be 0');
   }
 
-  const expectedAaguid = attestEnv === 'production' ? AAGUID_PROD : AAGUID_DEV;
-
-  if (!timingSafeEqualBytes(auth.aaguid, expectedAaguid)) {
+  if (!aaguidAllowed(auth.aaguid, attestEnv)) {
     throw new AttestError(`AAGUID is not for the ${attestEnv} environment`);
   }
 

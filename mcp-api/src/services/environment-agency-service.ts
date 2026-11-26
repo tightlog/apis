@@ -1,35 +1,59 @@
 import {
+  asArray,
+  firstNumber,
+  firstString,
   RIVER_GAUGE_SEARCH_KM,
   RIVER_READING_COUNT,
   riverTrend,
 } from '../http';
+import type { EaItems, EaReading, EaStation } from '../http';
 import { getJson } from '../utils/getJson';
 import type { Coordinates } from '../validation/tools';
 
-interface EaStation {
-  label?: string;
-  riverName?: string;
-  lat?: number;
-  long?: number;
-  measures?: { '@id'?: string; parameter?: string }[];
+async function getEa<Item>(url: string): Promise<Item[]> {
+  const body = await getJson<EaItems<Item>>(url);
+  return asArray(body?.items);
 }
 
-interface EaReading {
-  dateTime?: string;
-  value?: number;
+interface Gauge {
+  station: EaStation;
+  measureId: string | null;
+  distance: number;
 }
 
-async function getEa<T>(url: string): Promise<T[]> {
-  const body = await getJson<{ items?: T[] }>(url);
-  return body?.items ?? [];
-}
-
-function squaredDistance(station: EaStation, input: Coordinates): number {
-  const dLat = (station.lat ?? 0) - input.latitude;
+function squaredDistance(
+  lat: number,
+  long: number,
+  input: Coordinates,
+): number {
+  const dLat = lat - input.latitude;
   const dLong =
-    ((station.long ?? 0) - input.longitude) *
-    Math.cos((input.latitude * Math.PI) / 180);
+    (long - input.longitude) * Math.cos((input.latitude * Math.PI) / 180);
   return dLat * dLat + dLong * dLong;
+}
+
+function nearestGauge(
+  stations: readonly EaStation[],
+  input: Coordinates,
+): Gauge | null {
+  let nearest: Gauge | null = null;
+  for (const station of stations) {
+    const lat = firstNumber(station.lat);
+    const long = firstNumber(station.long);
+    if (lat == null || long == null) {
+      continue;
+    }
+
+    const distance = squaredDistance(lat, long, input);
+    if (nearest === null || distance < nearest.distance) {
+      const measure = asArray(station.measures).find(
+        item => item.parameter === 'level',
+      );
+      nearest = { station, measureId: measure?.['@id'] ?? null, distance };
+    }
+  }
+
+  return nearest;
 }
 
 export const environmentAgencyService = {
@@ -39,12 +63,8 @@ export const environmentAgencyService = {
         `?parameter=level&lat=${input.latitude}` +
         `&long=${input.longitude}&dist=${RIVER_GAUGE_SEARCH_KM}`,
     );
-    const nearest = stations
-      .filter(station => station.lat != null && station.long != null)
-      .toSorted((a, b) => squaredDistance(a, input) - squaredDistance(b, input))
-      .at(0);
-    const measure = nearest?.measures?.find(item => item.parameter === 'level');
-    if (!nearest || !measure?.['@id']) {
+    const nearest = nearestGauge(stations, input);
+    if (!nearest?.measureId) {
       return {
         available: false,
         reason: `no river gauge within ${RIVER_GAUGE_SEARCH_KM} km (Environment Agency covers England only)`,
@@ -53,12 +73,17 @@ export const environmentAgencyService = {
 
     const readings = (
       await getEa<EaReading>(
-        `${measure['@id']}/readings?_sorted&_limit=${RIVER_READING_COUNT}`,
+        `${nearest.measureId}/readings?_sorted&_limit=${RIVER_READING_COUNT}`,
       )
-    ).filter(reading => reading.value != null && reading.dateTime != null);
+    ).flatMap(reading => {
+      const value = firstNumber(reading.value);
+      return value != null && reading.dateTime != null
+        ? [{ value, dateTime: reading.dateTime }]
+        : [];
+    });
     const latest = readings[0];
     const oldest = readings.at(-1);
-    if (latest?.value == null || oldest?.value == null) {
+    if (!latest || !oldest) {
       return { available: false, reason: 'the gauge has no recent readings' };
     }
 
@@ -66,8 +91,8 @@ export const environmentAgencyService = {
 
     return {
       available: true,
-      station: nearest.label ?? null,
-      river: nearest.riverName ?? null,
+      station: firstString(nearest.station.label),
+      river: nearest.station.riverName ?? null,
       levelM: latest.value,
       readAt: latest.dateTime,
       trend: riverTrend(oldest.value, latest.value),

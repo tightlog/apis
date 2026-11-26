@@ -5,7 +5,6 @@ import { createServer } from './server';
 
 async function handleMcp(request: Request): Promise<Response> {
   const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
     enableJsonResponse: true,
   });
   await createServer().connect(transport);

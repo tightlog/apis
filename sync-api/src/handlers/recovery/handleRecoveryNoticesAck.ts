@@ -4,6 +4,7 @@ import { getDb } from '../../db';
 import { SyncRepo } from '../../repo';
 import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
+import type { SyncOkResponse } from '../../http';
 import { recoveryNoticesAckSchema } from '../../validation/recovery';
 import { metaBodyLimit } from '../../constants/body-limits';
 
@@ -33,5 +34,5 @@ export async function handleRecoveryNoticesAck(
     await new SyncRepo(getDb(env)).markRecoveryNoticesRead(keyHash, ids).run();
   }
 
-  return json({ ok: true });
+  return json<SyncOkResponse>({ ok: true });
 }

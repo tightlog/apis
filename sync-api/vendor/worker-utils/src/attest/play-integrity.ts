@@ -461,7 +461,7 @@ export async function verifyPlayIntegrityToken(options: {
       token: options.token,
       packageNames: options.packageNames,
       serviceAccountJson: options.serviceAccountJson,
-      fetchImpl: options.fetchImpl,
+      fetchImpl: options.fetchImpl ?? fetch,
       nowMs,
     });
     const judged = judgePlayIntegrity(verdict, {

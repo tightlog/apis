@@ -14,7 +14,7 @@ import { MAX_IP_DAILY_UPLOAD_BYTES, mediaKey, utcDay } from '../../media';
 import type { SyncRepo } from '../../repo';
 import type { Env } from '../../types';
 import { mediaWriter } from './mediaCaller';
-import type { SyncErrorBody } from '../../http';
+import type { MediaPutResponse, SyncErrorBody } from '../../http';
 
 async function quotaRefusal(
   repo: SyncRepo,
@@ -124,5 +124,5 @@ export async function handleMediaPut(
     bytes: stored.size,
     contentType: parsed.contentType,
   });
-  return json({ basename, bytes: stored.size });
+  return json<MediaPutResponse>({ basename, bytes: stored.size });
 }

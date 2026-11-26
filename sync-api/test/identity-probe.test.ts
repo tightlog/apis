@@ -1,7 +1,7 @@
 import type { Client } from '@libsql/client';
 import { beforeEach, describe, expect, test } from 'vitest';
+import type { IdentitySummary } from '../src/http';
 import { SyncRepo } from '../src/repo';
-import type { IdentitySummary } from '../src/repo';
 import { catchRow } from './__fixtures__/catchRow.fixture';
 import { migratedDb } from './sqlite-db';
 

@@ -88,5 +88,5 @@ export async function handleRegister(
     userId: user.id,
     hasKeyEscrow: user.keyEscrow !== null,
   };
-  return json(response);
+  return json<RegisterResponse>(response);
 }

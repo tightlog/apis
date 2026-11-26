@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { SqlRow } from '@tightlog/worker-utils/services/libsql';
-import type { SyncTableName } from '../src/http';
+import type { SyncTableName, SyncTableRow } from '../src/http';
 import { SYNC_TEXT_MAX } from '../src/http';
 import type { SanitizedRow } from '../src/tables';
 import {
@@ -10,7 +10,6 @@ import {
   syncRowFromDb,
   syncRowSchema,
 } from '../src/tables';
-import type { SyncRow } from '../src/types';
 
 type ColumnValues = Record<string, SanitizedRow['values'][number]>;
 
@@ -212,7 +211,7 @@ describe('syncRowFromDb', () => {
       updated_at_ms: 1750000000000,
       deleted_at: null,
     });
-    expect(syncRow).toEqual<SyncRow>({
+    expect(syncRow).toEqual<SyncTableRow<'catches'>>({
       id: 'uuid-1',
       updatedAt: 1750000000000,
       species: 'Carp',
@@ -268,7 +267,9 @@ describe('syncRowFromDb', () => {
         sanitized.values[i] === undefined ? null : sanitized.values[i];
     }
 
-    expect(syncRowFromDb('sessions', dbRow)).toEqual<SyncRow>(input);
+    expect(syncRowFromDb('sessions', dbRow)).toEqual<SyncTableRow<'sessions'>>(
+      input,
+    );
   });
 });
 
@@ -336,7 +337,7 @@ describe('catch_media rows', () => {
         updated_at_ms: 1000,
         deleted_at: null,
       }),
-    ).toEqual<SyncRow>({
+    ).toEqual<SyncTableRow<'catch_media'>>({
       id: 'media-uuid',
       catchId: 'catch-uuid',
       basename: 'a'.repeat(64) + '.jpg',
@@ -346,5 +347,20 @@ describe('catch_media rows', () => {
       updatedAt: 1000,
       deletedAt: null,
     });
+  });
+
+  test('falls back to photo for an unknown stored kind', () => {
+    expect(
+      syncRowFromDb('catch_media', {
+        id: 'media-uuid',
+        catch_id: 'catch-uuid',
+        basename: 'a'.repeat(64) + '.jpg',
+        kind: 'audio',
+        position: 0,
+        created_at: '2026-07-01T06:00:00.000Z',
+        updated_at_ms: 1000,
+        deleted_at: null,
+      }).kind,
+    ).toBe('photo');
   });
 });

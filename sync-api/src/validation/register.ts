@@ -18,4 +18,4 @@ export const registerSchema = z.object({
   osName: metaStringSchema,
   osVersion: metaStringSchema,
   appVersion: metaStringSchema,
-} satisfies Record<keyof RegisterBody, z.ZodType>);
+}) satisfies z.ZodType<Record<keyof RegisterBody, string | null>, RegisterBody>;

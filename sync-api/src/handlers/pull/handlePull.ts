@@ -6,7 +6,7 @@ import { schemaVersionError } from '../../schema';
 import { syncRowFromDb } from '../../tables';
 import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
-import type { SyncErrorBody } from '../../http';
+import type { PullResponse, SyncErrorBody, SyncTableRow } from '../../http';
 
 export async function handlePull(
   request: Request,
@@ -38,7 +38,7 @@ export async function handlePull(
     keyHash,
     sinceMs,
   );
-  return json({
+  return json<PullResponse<SyncTableRow<typeof table>>>({
     items: rows.map(row => syncRowFromDb(table, row)),
     nextSince,
   });

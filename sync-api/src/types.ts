@@ -46,4 +46,5 @@ export interface SyncRow extends Record<
 > {
   id: string;
   updatedAt: number;
+  deletedAt: string | null;
 }

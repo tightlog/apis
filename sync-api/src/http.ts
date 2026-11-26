@@ -102,6 +102,19 @@ export interface RegisterResponse {
   hasKeyEscrow: boolean;
 }
 
+export interface AdoptPurchaseResponse {
+  userId: string;
+}
+
+export interface MediaPutResponse {
+  basename: string;
+  bytes: number;
+}
+
+export interface SyncOkResponse {
+  ok: true;
+}
+
 export interface AdoptPurchaseBody {
   appUserId: string;
   storeTransactionId: string;
@@ -130,7 +143,19 @@ export interface MediaStatusResponse {
   usage?: MediaUsage;
 }
 
-export type RecoveryNoticeKind = 'account_relinked';
+export const RECOVERY_NOTICE_KINDS = ['account_relinked'] as const;
+
+export type RecoveryNoticeKind = (typeof RECOVERY_NOTICE_KINDS)[number];
+
+const RECOVERY_NOTICE_KIND_SET: ReadonlySet<string> = new Set(
+  RECOVERY_NOTICE_KINDS,
+);
+
+export function isRecoveryNoticeKind(
+  value: string,
+): value is RecoveryNoticeKind {
+  return RECOVERY_NOTICE_KIND_SET.has(value);
+}
 
 export interface RecoveryNotice {
   id: string;
@@ -257,15 +282,21 @@ interface SyncFieldValue {
   number: number | null;
   boolean: boolean;
   integer: number;
-  oneOf: string;
 }
 
-type SyncRowFields<T extends SyncTableName> = {
-  -readonly [
-    K in keyof (typeof SYNC_ROW_FIELDS)[T]
-  ]: (typeof SYNC_ROW_FIELDS)[T][K] extends SyncField
-    ? SyncFieldValue[(typeof SYNC_ROW_FIELDS)[T][K]['type']]
+type SyncFieldValueOf<F> = F extends {
+  type: 'oneOf';
+  values: readonly (infer V)[];
+}
+  ? V
+  : F extends { type: infer K extends keyof SyncFieldValue }
+    ? SyncFieldValue[K]
     : never;
+
+type SyncRowFields<T extends SyncTableName> = {
+  -readonly [K in keyof (typeof SYNC_ROW_FIELDS)[T]]: SyncFieldValueOf<
+    (typeof SYNC_ROW_FIELDS)[T][K]
+  >;
 };
 
 interface SyncRowMeta {

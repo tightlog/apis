@@ -125,7 +125,7 @@ function isUnexpired(
 }
 
 interface PurchaseSource {
-  store?: string | null;
+  store?: string | null | undefined;
 }
 
 // The RevenueCat Test Store key shipped in old app builds, and anyone can make a

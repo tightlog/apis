@@ -23,7 +23,10 @@
     "lib": ["ES2023"],
     "types": ["@cloudflare/workers-types"],
     "incremental": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "exactOptionalPropertyTypes": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false
   },
   "include": ["src", "test", "scripts", "env.d.ts", "worker-configuration.d.ts"]
 }

@@ -3,6 +3,7 @@ import { getDb } from '../../db';
 import { SyncRepo } from '../../repo';
 import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
+import type { SyncOkResponse } from '../../http';
 
 export async function handleEscrowKeyDelete(
   request: Request,
@@ -19,5 +20,5 @@ export async function handleEscrowKeyDelete(
   const user = await repo.getOrCreateUser(keyHash);
   await repo.setKeyEscrow(user.id, null).run();
 
-  return json({ ok: true });
+  return json<SyncOkResponse>({ ok: true });
 }

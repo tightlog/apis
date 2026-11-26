@@ -307,7 +307,7 @@ export function attestRejection(
     level: gate.status === 503 ? 'error' : 'warning',
     tags: { route, reason: gate.error },
     fingerprint: ['attest-gate', gate.error],
-    extra: gate.detail === undefined ? undefined : { detail: gate.detail },
+    extra: gate.detail === undefined ? {} : { detail: gate.detail },
   });
   const error: AttestErrorCode =
     gate.status === 503

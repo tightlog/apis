@@ -1,6 +1,7 @@
 import type { Client } from '@libsql/client';
 import { beforeEach, describe, expect, test } from 'vitest';
 import type { Db } from '@tightlog/worker-utils/services/libsql';
+import type { RecoveryNotice } from '../src/http';
 import { SyncRepo } from '../src/repo';
 import { migratedDb } from './sqlite-db';
 
@@ -112,6 +113,33 @@ describe('recovery notices', () => {
     await repo.markRecoveryNoticesRead(OLD_KEY, ['notice-1']).run();
 
     expect(await repo.listUnreadRecoveryNotices(OLD_KEY)).toHaveLength(0);
+  });
+
+  test('skips a notice whose kind this Worker does not know', async () => {
+    const user = await repo.getOrCreateUser(OLD_KEY);
+    await client.execute({
+      sql: 'INSERT INTO recovery_notices (id, user_id, kind, created_at) VALUES (?, ?, ?, ?)',
+      args: ['notice-1', user.id, 'account_merged', '2026-07-01T06:00:00.000Z'],
+    });
+    await client.execute({
+      sql: 'INSERT INTO recovery_notices (id, user_id, kind, created_at) VALUES (?, ?, ?, ?)',
+      args: [
+        'notice-2',
+        user.id,
+        'account_relinked',
+        '2026-07-01T07:00:00.000Z',
+      ],
+    });
+
+    expect(await repo.listUnreadRecoveryNotices(OLD_KEY)).toEqual<
+      RecoveryNotice[]
+    >([
+      {
+        id: 'notice-2',
+        kind: 'account_relinked',
+        createdAt: '2026-07-01T07:00:00.000Z',
+      },
+    ]);
   });
 
   test('an unknown key has no notices, and acking with it changes nothing', async () => {

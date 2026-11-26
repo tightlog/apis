@@ -16,7 +16,7 @@ export async function parseJsonBody<T, Code extends string = WorkerErrorCode>(
   {
     error,
     status = 400,
-    requireContentLength,
+    requireContentLength = false,
   }: ParseJsonBodyOptions<Code> = {},
 ): Promise<T | Response> {
   const body = await readJson(request, { maxBytes, requireContentLength });

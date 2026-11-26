@@ -352,6 +352,88 @@ describe('tools', () => {
     });
   });
 
+  test('get_river_level picks the nearest gauge when the Environment Agency sends a list of coordinates', async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        Response.json(
+          url.includes('/readings')
+            ? { items: { dateTime: '2026-11-02T14:00:00Z', value: [1.42] } }
+            : {
+                items: [
+                  {
+                    label: 'Far Weir',
+                    riverName: 'River Far',
+                    lat: 52.4,
+                    long: -1.9,
+                    measures: [{ '@id': 'https://ea/far', parameter: 'level' }],
+                  },
+                  {
+                    label: ['Near Bridge', 'Near Bridge Gauge'],
+                    riverName: 'River Avon',
+                    lat: [52.29, 52.2901],
+                    long: [-1.53, -1.5301],
+                    measures: { '@id': 'https://ea/near', parameter: 'level' },
+                  },
+                ],
+              },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const client = await connectClient();
+
+    const result = toolJson<
+      Awaited<ReturnType<typeof environmentAgencyService.riverLevel>>
+    >(
+      await client.callTool({
+        name: 'get_river_level',
+        arguments: { latitude: 52.28, longitude: -1.53 },
+      }),
+    );
+
+    expect(result).toEqual({
+      available: true,
+      station: 'Near Bridge',
+      river: 'River Avon',
+      levelM: 1.42,
+      readAt: '2026-11-02T14:00:00Z',
+      trend: 'steady',
+      changeM: 0,
+      since: '2026-11-02T14:00:00Z',
+    });
+  });
+
+  test('get_river_level reads a single station sent as an object', async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        Response.json(
+          url.includes('/readings')
+            ? { items: [{ dateTime: '2026-11-02T14:00:00Z', value: 0.8 }] }
+            : {
+                items: {
+                  label: 'Only Weir',
+                  riverName: 'River Only',
+                  lat: 52.3,
+                  long: -1.5,
+                  measures: [{ '@id': 'https://ea/only', parameter: 'level' }],
+                },
+              },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const client = await connectClient();
+
+    await client.callTool({
+      name: 'get_river_level',
+      arguments: { latitude: 52.28, longitude: -1.53 },
+    });
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      'https://ea/only/readings?_sorted&_limit=12',
+    );
+  });
+
   test('get_river_level says so with no gauge nearby', async () => {
     stubFetch({ items: [] });
     const client = await connectClient();

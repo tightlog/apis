@@ -1,7 +1,7 @@
 import type { Value } from '@libsql/client/web';
 import { z } from 'zod';
 import { SYNC_TEXT_MAX, SYNC_ROW_FIELDS } from './http';
-import type { SyncField, SyncTableName } from './http';
+import type { SyncField, SyncTableName, SyncTableRow } from './http';
 import type { SqlRow } from '@tightlog/worker-utils/services/libsql';
 import type { SyncRow } from './types';
 
@@ -79,7 +79,10 @@ function codec(field: SyncField): Omit<Field, 'column'> {
           typeof value === 'string' && field.values.includes(value)
             ? value
             : field.fallback,
-        fromDb: value => (typeof value === 'string' ? value : field.fallback),
+        fromDb: value =>
+          typeof value === 'string' && field.values.includes(value)
+            ? value
+            : field.fallback,
       };
     }
     default: {
@@ -207,12 +210,18 @@ export function sanitizeRow(
   };
 }
 
+export function syncRowFromDb<T extends SyncTableName>(
+  table: T,
+  dbRow: SqlRow,
+): SyncTableRow<T>;
 export function syncRowFromDb(table: SyncTableName, dbRow: SqlRow): SyncRow {
   const idValue = dbRow['id'];
   const updatedAtMs = dbRow['updated_at_ms'];
+  const deletedAt = dbRow['deleted_at'];
   const syncRow: SyncRow = {
     id: typeof idValue === 'string' ? idValue : '',
     updatedAt: typeof updatedAtMs === 'number' ? updatedAtMs : 0,
+    deletedAt: typeof deletedAt === 'string' ? deletedAt : null,
   };
 
   for (const [name, field] of fields(table)) {
@@ -220,8 +229,6 @@ export function syncRowFromDb(table: SyncTableName, dbRow: SqlRow): SyncRow {
     syncRow[name] = field.fromDb(columnValue ?? null);
   }
 
-  const deletedAt = dbRow['deleted_at'];
-  syncRow['deletedAt'] = typeof deletedAt === 'string' ? deletedAt : null;
   return syncRow;
 }
 

@@ -3,6 +3,7 @@ import { getDb } from '../../db';
 import { SyncRepo } from '../../repo';
 import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
+import type { RecoveryNoticesResponse } from '../../http';
 
 export async function handleRecoveryNoticesPull(
   request: Request,
@@ -18,11 +19,5 @@ export async function handleRecoveryNoticesPull(
   const notices = await new SyncRepo(getDb(env)).listUnreadRecoveryNotices(
     keyHash,
   );
-  return json({
-    items: notices.map(notice => ({
-      id: notice.id,
-      kind: notice.kind,
-      createdAt: notice.created_at,
-    })),
-  });
+  return json<RecoveryNoticesResponse>({ items: notices });
 }

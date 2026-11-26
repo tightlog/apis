@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { AsnParser } from '@peculiar/asn1-schema';
 import { SubjectPublicKeyInfo } from '@peculiar/asn1-x509';
 import { decode as cborDecode } from 'cbor-x';
+import { z } from 'zod';
 import { AttestError } from './attest-error';
 import type { Bytes } from './types/bytes';
 import { base64ToBytes } from './util/base64ToBytes';
@@ -34,16 +35,18 @@ export interface AssertionResult {
   newCounter: number;
 }
 
-interface AttestationCbor {
-  fmt: string;
-  attStmt: { x5c: Bytes[] };
-  authData: Bytes;
-}
+const bytes = z.instanceof(Uint8Array);
 
-interface AssertionCbor {
-  signature: Bytes;
-  authenticatorData: Bytes;
-}
+const attestationCbor = z.object({
+  fmt: z.string(),
+  attStmt: z.object({ x5c: z.array(bytes) }),
+  authData: bytes,
+});
+
+const assertionCbor = z.object({
+  signature: bytes,
+  authenticatorData: bytes,
+});
 
 function appIdHash(teamId: string, bundleId: string): Promise<Bytes> {
   return sha256(encoder.encode(`${teamId}.${bundleId}`));
@@ -57,25 +60,24 @@ export async function verifyAttestation(
   bundleIds: string[],
   attestEnv: AppAttestEnv,
 ): Promise<AttestationResult> {
-  let attestation: AttestationCbor;
+  let decoded: unknown;
 
   try {
-    // SAFETY: the structure checks below reject any other decoded shape.
-    attestation = cborDecode(base64ToBytes(attestationB64)) as AttestationCbor;
+    decoded = cborDecode(base64ToBytes(attestationB64));
   } catch {
     throw new AttestError('attestation is not valid CBOR');
   }
 
-  if (attestation.fmt !== 'apple-appattest') {
-    throw new AttestError(`unexpected attestation fmt: ${attestation.fmt}`);
+  const parsed = attestationCbor.safeParse(decoded);
+
+  if (!parsed.success) {
+    throw new AttestError('malformed attestation structure');
   }
 
-  if (
-    !attestation.attStmt ||
-    !Array.isArray(attestation.attStmt.x5c) ||
-    !(attestation.authData instanceof Uint8Array)
-  ) {
-    throw new AttestError('malformed attestation structure');
+  const attestation = parsed.data;
+
+  if (attestation.fmt !== 'apple-appattest') {
+    throw new AttestError(`unexpected attestation fmt: ${attestation.fmt}`);
   }
 
   const [leaf, clientDataHash] = await Promise.all([
@@ -147,21 +149,21 @@ export async function verifyAssertion(
   teamId: string,
   bundleId: string,
 ): Promise<AssertionResult> {
-  let assertion: AssertionCbor;
+  let decoded: unknown;
 
   try {
-    // SAFETY: the structure checks below reject any other decoded shape.
-    assertion = cborDecode(base64ToBytes(assertionB64)) as AssertionCbor;
+    decoded = cborDecode(base64ToBytes(assertionB64));
   } catch {
     throw new AttestError('assertion is not valid CBOR');
   }
 
-  if (
-    !(assertion.signature instanceof Uint8Array) ||
-    !(assertion.authenticatorData instanceof Uint8Array)
-  ) {
+  const parsed = assertionCbor.safeParse(decoded);
+
+  if (!parsed.success) {
     throw new AttestError('assertion missing signature or authenticatorData');
   }
+
+  const assertion = parsed.data;
 
   const [clientDataHash, key, rpId] = await Promise.all([
     sha256(encoder.encode(challenge)),

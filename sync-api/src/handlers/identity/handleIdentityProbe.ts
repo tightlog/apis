@@ -3,6 +3,7 @@ import { getDb } from '../../db';
 import { SyncRepo } from '../../repo';
 import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
+import type { IdentitySummary } from '../../http';
 
 export async function handleIdentityProbe(
   request: Request,
@@ -16,5 +17,5 @@ export async function handleIdentityProbe(
   const { keyHash } = caller;
 
   const summary = await new SyncRepo(getDb(env)).getIdentitySummary(keyHash);
-  return json(summary);
+  return json<IdentitySummary>(summary);
 }

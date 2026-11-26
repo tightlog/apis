@@ -4,7 +4,7 @@ import { encryptKeyEscrow, isEscrowSecret } from '../../key-escrow';
 import { SyncRepo } from '../../repo';
 import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
-import type { SyncErrorBody } from '../../http';
+import type { SyncErrorBody, SyncOkResponse } from '../../http';
 
 export async function handleEscrowKey(
   request: Request,
@@ -28,5 +28,5 @@ export async function handleEscrowKey(
   });
   await repo.setKeyEscrow(user.id, ciphertext).run();
 
-  return json({ ok: true });
+  return json<SyncOkResponse>({ ok: true });
 }

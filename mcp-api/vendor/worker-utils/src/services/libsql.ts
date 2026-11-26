@@ -1,5 +1,11 @@
 import { createClient } from '@libsql/client/web';
-import type { Client, InValue, ResultSet, Value } from '@libsql/client/web';
+import type {
+  Client,
+  Config,
+  InValue,
+  ResultSet,
+  Value,
+} from '@libsql/client/web';
 import { RETRY, retry } from '../worker/retry';
 import { z } from 'zod';
 
@@ -174,5 +180,10 @@ export function createLibsqlDb(env: LibsqlEnv): Db {
     throw new Error('TURSO_DATABASE_URL is not set');
   }
 
-  return libsqlDb(createClient({ url, authToken: env.TURSO_AUTH_TOKEN }));
+  const config: Config = { url };
+  if (env.TURSO_AUTH_TOKEN !== undefined) {
+    config.authToken = env.TURSO_AUTH_TOKEN;
+  }
+
+  return libsqlDb(createClient(config));
 }

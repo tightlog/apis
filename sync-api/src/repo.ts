@@ -1,4 +1,10 @@
-import type { SyncErrorCode, SyncTableName } from './http';
+import { isRecoveryNoticeKind } from './http';
+import type {
+  IdentitySummary,
+  RecoveryNotice,
+  SyncErrorCode,
+  SyncTableName,
+} from './http';
 import { ResponseError } from '@tightlog/worker-utils/worker/fetch';
 import type {
   Db,
@@ -56,11 +62,6 @@ const UPSERT_CHUNK = 50;
 export const PULL_PAGE_SIZE = 200;
 
 const MAX_BOUNDARY_COHORT = 2_000;
-
-export interface IdentitySummary {
-  known: boolean;
-  catches: number;
-}
 
 export interface UserMeta {
   anglerName?: string | null;
@@ -161,9 +162,7 @@ export class SyncRepo {
     return row ? { known: true, catches: row.n } : { known: false, catches: 0 };
   }
 
-  async listUnreadRecoveryNotices(
-    keyHash: string,
-  ): Promise<RecoveryNoticeRow[]> {
+  async listUnreadRecoveryNotices(keyHash: string): Promise<RecoveryNotice[]> {
     const result = await this.db
       .prepare(
         `SELECT id, kind, created_at FROM recovery_notices
@@ -172,7 +171,9 @@ export class SyncRepo {
       )
       .bind(keyHash, keyHash)
       .all<RecoveryNoticeRow>();
-    return result.results;
+    return result.results.flatMap(({ id, kind, created_at }) =>
+      isRecoveryNoticeKind(kind) ? [{ id, kind, createdAt: created_at }] : [],
+    );
   }
 
   markRecoveryNoticesRead(keyHash: string, allIds: string[]): Statement {

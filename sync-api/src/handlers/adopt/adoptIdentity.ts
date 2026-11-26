@@ -1,7 +1,7 @@
 import { json } from '@tightlog/worker-utils/request/json';
 import type { SyncRepo } from '../../repo';
 import type { SyncUser } from '../../types';
-import type { SyncErrorBody } from '../../http';
+import type { AdoptPurchaseResponse, SyncErrorBody } from '../../http';
 
 export async function adoptIdentity(
   repo: SyncRepo,
@@ -9,7 +9,7 @@ export async function adoptIdentity(
   keyHash: string,
 ): Promise<Response> {
   if (linked.keyHash === keyHash) {
-    return json({ userId: linked.id });
+    return json<AdoptPurchaseResponse>({ userId: linked.id });
   }
 
   const current = await repo.getOrCreateUser(keyHash);
@@ -18,5 +18,5 @@ export async function adoptIdentity(
   }
 
   await repo.rekeyUser(linked, keyHash, current.id);
-  return json({ userId: linked.id });
+  return json<AdoptPurchaseResponse>({ userId: linked.id });
 }

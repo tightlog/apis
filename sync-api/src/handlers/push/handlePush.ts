@@ -13,7 +13,7 @@ import type { Env } from '../../types';
 import { authenticate } from '../../utils/authenticate';
 import { pushSchema } from '../../validation/push';
 import { collectOrphanedMedia } from './collectOrphanedMedia';
-import type { SyncErrorBody } from '../../http';
+import type { PushBody, SyncErrorBody, SyncTableRow } from '../../http';
 
 export async function handlePush(
   request: Request,
@@ -60,7 +60,7 @@ export async function handlePush(
     .filter(row => row !== null);
 
   if (rows.length === 0) {
-    return json({ items: [] });
+    return json<PushBody<SyncTableRow<typeof table>>>({ items: [] });
   }
 
   const repo = new SyncRepo(getDb(env));
@@ -70,7 +70,7 @@ export async function handlePush(
     ctx.waitUntil(collectOrphanedMedia(repo, env.MEDIA, keyHash, rows));
   }
 
-  return json({
+  return json<PushBody<SyncTableRow<typeof table>>>({
     items: merged.map(row => syncRowFromDb(table, row)),
   });
 }

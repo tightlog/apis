@@ -4,6 +4,7 @@ import {
   tidePointsOf,
   wmoGroup,
 } from '../http';
+import type { CurrentConditionsResult } from '../http';
 import { getJson } from '../utils/getJson';
 import type {
   Coordinates,
@@ -98,7 +99,9 @@ function openMeteoUrl(
 }
 
 export const openMeteoService = {
-  currentConditions: async (input: Coordinates) => {
+  currentConditions: async (
+    input: Coordinates,
+  ): Promise<CurrentConditionsResult> => {
     const body = await getJson<OpenMeteoCurrent>(
       openMeteoUrl('forecast', input, {
         current: [

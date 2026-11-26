@@ -56,5 +56,5 @@ export async function handleMediaStatus(
     missing: wanted.filter(name => !present.has(name)),
     usage,
   };
-  return json(response);
+  return json<MediaStatusResponse>(response);
 }

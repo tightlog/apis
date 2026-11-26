@@ -50,6 +50,56 @@ export const RIVER_GAUGE_SEARCH_KM = 12;
 
 export const RIVER_READING_COUNT = 12;
 
+export interface EaReading {
+  dateTime?: string;
+  value?: number | number[];
+}
+
+export interface EaMeasure {
+  '@id'?: string;
+  parameter?: string;
+  qualifier?: string;
+  unitName?: string;
+  latestReading?: EaReading;
+}
+
+export interface EaStation {
+  '@id'?: string;
+  label?: string | string[];
+  riverName?: string;
+  town?: string;
+  lat?: number | number[];
+  long?: number | number[];
+  stationReference?: string;
+  measures?: EaMeasure | EaMeasure[];
+}
+
+export interface EaItems<Item> {
+  items?: Item | Item[];
+}
+
+export function asArray<T>(value: T | T[] | undefined): T[] {
+  if (value == null) {
+    return [];
+  }
+
+  return Array.isArray(value) ? value : [value];
+}
+
+export function firstNumber(
+  value: number | number[] | undefined,
+): number | null {
+  const n = Array.isArray(value) ? value[0] : value;
+  return n != null && Number.isFinite(n) ? n : null;
+}
+
+export function firstString(
+  value: string | string[] | undefined,
+): string | null {
+  const s = Array.isArray(value) ? value[0] : value;
+  return s != null && s.length > 0 ? s : null;
+}
+
 const RIVER_STEADY_M = 0.01;
 
 const PRESSURE_STEADY_HPA = 2;
@@ -76,18 +126,21 @@ export function pressureTrendOf(deltaHpa: number): PressureTrend {
   return trendOf(deltaHpa, PRESSURE_STEADY_HPA);
 }
 
-export type WmoGroup =
-  | 'clear'
-  | 'mainly clear'
-  | 'partly cloudy'
-  | 'overcast'
-  | 'fog'
-  | 'drizzle'
-  | 'rain'
-  | 'snow'
-  | 'rain showers'
-  | 'snow showers'
-  | 'thunderstorm';
+const WMO_GROUP_NAMES = [
+  'clear',
+  'mainly clear',
+  'partly cloudy',
+  'overcast',
+  'fog',
+  'drizzle',
+  'rain',
+  'snow',
+  'rain showers',
+  'snow showers',
+  'thunderstorm',
+] as const;
+
+export type WmoGroup = (typeof WMO_GROUP_NAMES)[number];
 
 // https://open-meteo.com/en/docs - WMO weather interpretation codes
 const WMO_GROUPS: readonly [maxCode: number, group: WmoGroup][] = [
@@ -111,6 +164,25 @@ export function wmoGroup(code: number | null | undefined): WmoGroup | null {
 
   return WMO_GROUPS.find(([maxCode]) => code <= maxCode)?.[1] ?? null;
 }
+
+const conditionsReading = z.number().nullable().catch(null);
+
+export const currentConditionsResult = z.discriminatedUnion('available', [
+  z.looseObject({ available: z.literal(false) }),
+  z.looseObject({
+    available: z.literal(true),
+    weather: z.enum(WMO_GROUP_NAMES).nullable().catch(null),
+    temperature: conditionsReading,
+    feelsLike: conditionsReading,
+    wind: conditionsReading,
+    gusts: conditionsReading,
+    windFromDegrees: conditionsReading,
+    pressure: conditionsReading,
+    rainLastHour: conditionsReading,
+  }),
+]);
+
+export type CurrentConditionsResult = z.input<typeof currentConditionsResult>;
 
 export interface TidePoint {
   time: string;

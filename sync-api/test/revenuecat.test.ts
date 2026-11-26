@@ -39,11 +39,14 @@ function statusOf(result: true | Response): number | null {
 function entitledSubscriber(txn = TXN) {
   return {
     subscriber: {
-      entitlements: { pro: { expires_date: null } },
+      entitlements: {
+        pro: { expires_date: null, product_identifier: 'annual' },
+      },
       subscriptions: {
         annual: {
           expires_date: null,
           store_transaction_id: txn,
+          store: 'app_store',
         },
       },
     },
@@ -72,25 +75,17 @@ describe('canClaimRevenueCatId', () => {
   });
 
   test('rejects an id that is not the sync key', () => {
-    expect(canClaimRevenueCatId('tightlog-e2e-purchase', keyHash, null)).toBe(
-      false,
-    );
+    expect(canClaimRevenueCatId('e2e-app-user', keyHash, null)).toBe(false);
   });
 
   test('claims the pinned e2e customer', () => {
-    expect(
-      canClaimRevenueCatId(
-        'tightlog-e2e-purchase',
-        keyHash,
-        'tightlog-e2e-purchase',
-      ),
-    ).toBe(true);
+    expect(canClaimRevenueCatId('e2e-app-user', keyHash, 'e2e-app-user')).toBe(
+      true,
+    );
   });
 
   test('does not treat a blank pin as a match', () => {
-    expect(canClaimRevenueCatId('tightlog-e2e-purchase', keyHash, '  ')).toBe(
-      false,
-    );
+    expect(canClaimRevenueCatId('e2e-app-user', keyHash, '  ')).toBe(false);
   });
 });
 

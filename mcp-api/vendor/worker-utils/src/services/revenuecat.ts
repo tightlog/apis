@@ -6,11 +6,13 @@ const SUBSCRIBERS_URL = 'https://api.revenuecat.com/v1/subscribers/';
 export interface RevenueCatEnv {
   REVENUECAT_SECRET_KEY?: string;
   REVENUECAT_ENTITLEMENT_IDS?: string;
+  REVENUECAT_ALLOW_TEST_STORE?: string;
 }
 
 interface RevenueCatSettings {
   secretKey: string;
   entitlementIds: string[];
+  allowTestStore: boolean;
 }
 
 export function configuredEntitlementIds(env: RevenueCatEnv): string[] {
@@ -23,16 +25,32 @@ export function revenueCatSettings(
   const secretKey = env.REVENUECAT_SECRET_KEY ?? '';
   const entitlementIds = configuredEntitlementIds(env);
   return secretKey !== '' && entitlementIds.length > 0
-    ? { secretKey, entitlementIds }
+    ? {
+        secretKey,
+        entitlementIds,
+        allowTestStore: env.REVENUECAT_ALLOW_TEST_STORE === 'true',
+      }
     : null;
 }
 
 const expiry = z.string().nullish();
 
+const purchaseSource = {
+  store: z.string().nullish(),
+};
+
 const subscriberSchema = z.object({
   subscriber: z.object({
     entitlements: z
-      .record(z.string(), z.object({ expires_date: expiry }).nullable())
+      .record(
+        z.string(),
+        z
+          .object({
+            expires_date: expiry,
+            product_identifier: z.string().nullish(),
+          })
+          .nullable(),
+      )
       .catch({}),
     subscriptions: z
       .record(
@@ -40,8 +58,12 @@ const subscriberSchema = z.object({
         z.object({
           expires_date: expiry,
           store_transaction_id: z.union([z.string(), z.number()]).nullish(),
+          ...purchaseSource,
         }),
       )
+      .catch({}),
+    non_subscriptions: z
+      .record(z.string(), z.array(z.object(purchaseSource)))
       .catch({}),
   }),
 });
@@ -102,26 +124,69 @@ function isUnexpired(
   return Number.isFinite(expiresMs) && expiresMs > nowMs;
 }
 
+interface PurchaseSource {
+  store?: string | null;
+}
+
+// The RevenueCat Test Store key shipped in old app builds, and anyone can make a
+// free Test Store purchase with it. Sandbox purchases still count: TestFlight,
+// App Review and Play testers buy in sandbox against the production Workers.
+export function isTestStore(purchase: PurchaseSource): boolean {
+  return (purchase.store ?? '').toLowerCase() === 'test_store';
+}
+
+// A Play subscription can appear as `product` in one place and
+// `product:base-plan` in the other, so compare the part before the colon too.
+function purchasesFor(
+  subscriber: Subscriber,
+  productId: string,
+): PurchaseSource[] {
+  const base = productId.split(':')[0];
+  const subscriptions = Object.entries(subscriber.subscriptions)
+    .filter(([key]) => key === productId || key.split(':')[0] === base)
+    .map(([, subscription]) => subscription);
+  return [...subscriptions, ...(subscriber.non_subscriptions[productId] ?? [])];
+}
+
+function grantFromTestStore(
+  subscriber: Subscriber,
+  productId: string | null | undefined,
+): boolean {
+  if (productId == null) {
+    return false;
+  }
+
+  const purchases = purchasesFor(subscriber, productId);
+  return purchases.length > 0 && purchases.every(isTestStore);
+}
+
 export function hasActiveEntitlement(
   subscriber: Subscriber,
-  entitlementIds: string[],
+  settings: Pick<RevenueCatSettings, 'entitlementIds' | 'allowTestStore'>,
   nowMs: number,
 ): boolean {
-  return entitlementIds.some(id => {
+  return settings.entitlementIds.some(id => {
     const grant = subscriber.entitlements[id];
-    return grant != null && isUnexpired(grant.expires_date, nowMs);
+    return (
+      grant != null &&
+      isUnexpired(grant.expires_date, nowMs) &&
+      (settings.allowTestStore ||
+        !grantFromTestStore(subscriber, grant.product_identifier))
+    );
   });
 }
 
 export function ownsActiveSubscription(
   subscriber: Subscriber,
   storeTransactionId: string,
+  settings: Pick<RevenueCatSettings, 'allowTestStore'>,
   nowMs: number,
 ): boolean {
   return Object.values(subscriber.subscriptions).some(
     subscription =>
       subscription.store_transaction_id != null &&
       String(subscription.store_transaction_id) === storeTransactionId &&
-      isUnexpired(subscription.expires_date, nowMs),
+      isUnexpired(subscription.expires_date, nowMs) &&
+      (settings.allowTestStore || !isTestStore(subscription)),
   );
 }

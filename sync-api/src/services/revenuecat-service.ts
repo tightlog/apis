@@ -44,13 +44,18 @@ export const revenueCatService = {
       return json<SyncErrorBody>({ error: 'revenuecat_unreachable' }, 502);
     }
 
-    if (
-      !hasActiveEntitlement(lookup.subscriber, settings.entitlementIds, nowMs)
-    ) {
+    if (!hasActiveEntitlement(lookup.subscriber, settings, nowMs)) {
       return json<SyncErrorBody>({ error: 'no_active_entitlement' }, 403);
     }
 
-    if (!ownsActiveSubscription(lookup.subscriber, storeTransactionId, nowMs)) {
+    if (
+      !ownsActiveSubscription(
+        lookup.subscriber,
+        storeTransactionId,
+        settings,
+        nowMs,
+      )
+    ) {
       return json<SyncErrorBody>({ error: 'purchase_not_owned' }, 403);
     }
 

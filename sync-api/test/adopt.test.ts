@@ -34,12 +34,16 @@ let victimId: string;
 const subscriber = {
   subscriber: {
     entitlements: {
-      'fish-logbook Pro': { expires_date: '2999-01-01T00:00:00Z' },
+      'fish-logbook Pro': {
+        expires_date: '2999-01-01T00:00:00Z',
+        product_identifier: 'pro',
+      },
     },
     subscriptions: {
       pro: {
         expires_date: '2999-01-01T00:00:00Z',
         store_transaction_id: TRANSACTION,
+        store: 'app_store',
       },
     },
   },

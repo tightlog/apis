@@ -35,6 +35,7 @@
       "vars": {
         "APP_ATTEST_ENV": "development",
         "REVENUECAT_ENTITLEMENT_IDS": "fish-logbook Pro",
+        "REVENUECAT_ALLOW_TEST_STORE": "true",
         "SENTRY_ENVIRONMENT": "staging",
         "SENTRY_TRACES_SAMPLE_RATE": "1.0"
       },
